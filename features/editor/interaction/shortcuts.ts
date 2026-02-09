@@ -9,17 +9,16 @@ export function useEditorShortcuts() {
     setMode,
     clearSelection,
     selection,
-    plan,
     executeCommand,
     resetDrawState,
   } = useEditorStore();
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
       ) {
         return;
       }
@@ -41,7 +40,7 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Escape
+      // Escape — cancel draw or clear selection
       if (e.key === "Escape") {
         if (mode === "draw") {
           resetDrawState();
@@ -54,12 +53,24 @@ export function useEditorShortcuts() {
 
       // Delete
       if (e.key === "Delete" || e.key === "Backspace") {
-        for (const item of selection.items) {
-          if (item.type === "vertex") {
-            executeCommand({ type: "REMOVE_VERTEX", vertexId: item.id });
-          } else if (item.type === "edge") {
-            executeCommand({ type: "REMOVE_EDGE", edgeId: item.id });
-          }
+        if (selection.items.length === 0) return;
+        // Collect all commands first, then execute
+        const cmds = selection.items
+          .map((item) => {
+            if (item.type === "vertex")
+              return { type: "REMOVE_VERTEX" as const, vertexId: item.id };
+            if (item.type === "edge")
+              return { type: "REMOVE_EDGE" as const, edgeId: item.id };
+            return null;
+          })
+          .filter(Boolean);
+
+        if (cmds.length > 0) {
+          executeCommand({
+            type: "BATCH",
+            label: "Delete selection",
+            commands: cmds as any,
+          });
         }
         clearSelection();
         return;
@@ -67,6 +78,7 @@ export function useEditorShortcuts() {
 
       // Mode shortcuts
       if (e.key === "v" || e.key === "V") {
+        if (mode === "draw") resetDrawState();
         setMode("select");
         return;
       }
@@ -75,6 +87,7 @@ export function useEditorShortcuts() {
         return;
       }
       if (e.key === "s" && !e.ctrlKey && !e.metaKey) {
+        if (mode === "draw") resetDrawState();
         setMode("split");
         return;
       }
@@ -86,7 +99,6 @@ export function useEditorShortcuts() {
       setMode,
       clearSelection,
       selection,
-      plan,
       executeCommand,
       resetDrawState,
     ],

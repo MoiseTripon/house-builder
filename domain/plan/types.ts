@@ -13,8 +13,8 @@ export interface Edge {
 
 export interface Face {
   id: string;
-  edgeIds: string[]; // ordered edges forming the boundary
-  vertexIds: string[]; // ordered vertices (CCW winding)
+  edgeIds: string[];
+  vertexIds: string[];
 }
 
 export interface Plan {
@@ -66,5 +66,35 @@ export function getFacesForEdge(plan: Plan, edgeId: string): Face[] {
 export function getFacesForVertex(plan: Plan, vertexId: string): Face[] {
   return Object.values(plan.faces).filter((f) =>
     f.vertexIds.includes(vertexId),
+  );
+}
+
+export function findVertexNear(
+  plan: Plan,
+  position: Vec2,
+  radius: number,
+): Vertex | null {
+  const dx = (a: Vec2, b: Vec2) => {
+    const ex = a.x - b.x;
+    const ey = a.y - b.y;
+    return Math.sqrt(ex * ex + ey * ey);
+  };
+  let closest: Vertex | null = null;
+  let closestDist = Infinity;
+  for (const v of Object.values(plan.vertices)) {
+    const d = dx(v.position, position);
+    if (d < radius && d < closestDist) {
+      closest = v;
+      closestDist = d;
+    }
+  }
+  return closest;
+}
+
+export function edgeExists(plan: Plan, aId: string, bId: string): boolean {
+  return Object.values(plan.edges).some(
+    (e) =>
+      (e.startId === aId && e.endId === bId) ||
+      (e.startId === bId && e.endId === aId),
   );
 }

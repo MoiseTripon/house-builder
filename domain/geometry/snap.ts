@@ -15,16 +15,16 @@ import { roundToGrid } from "../units/units";
 
 export interface SnapConfig {
   gridEnabled: boolean;
-  gridSize: number; // mm
+  gridSize: number;
   angleEnabled: boolean;
-  angleStep: number; // degrees
+  angleStep: number;
   geometryEnabled: boolean;
-  snapRadius: number; // pixels (screen space threshold)
+  snapRadius: number;
 }
 
 export const DEFAULT_SNAP_CONFIG: SnapConfig = {
   gridEnabled: true,
-  gridSize: 100, // 100mm = 10cm
+  gridSize: 100,
   angleEnabled: true,
   angleStep: 15,
   geometryEnabled: true,
@@ -62,7 +62,7 @@ export function snapToAngle(
   );
 }
 
-export interface SnapCandidate {
+interface SnapCandidate {
   position: Vec2;
   snapType: SnapResult["snapType"];
   targetId?: string;
@@ -75,13 +75,14 @@ export function computeSnap(
   config: SnapConfig,
   vertices: { id: string; position: Vec2 }[],
   edges: { id: string; start: Vec2; end: Vec2 }[],
-  anchor?: Vec2, // for angle snapping during drawing
-  worldToScreenScale: number = 1, // px per mm
+  anchor?: Vec2,
+  cameraZoom: number = 1,
 ): SnapResult {
   const candidates: SnapCandidate[] = [];
-  const screenRadius = config.snapRadius / Math.max(worldToScreenScale, 0.001);
+  // Convert screen-pixel radius to plan-unit radius
+  const screenRadius = config.snapRadius / Math.max(cameraZoom * 0.1, 0.001);
 
-  // 1. Snap to existing vertices
+  // 1. Vertices
   if (config.geometryEnabled) {
     for (const v of vertices) {
       const d = distance(rawPos, v.position);
@@ -96,7 +97,7 @@ export function computeSnap(
     }
   }
 
-  // 2. Snap to edge midpoints
+  // 2. Edge midpoints
   if (config.geometryEnabled) {
     for (const e of edges) {
       const mid = vec2((e.start.x + e.end.x) / 2, (e.start.y + e.end.y) / 2);
@@ -112,7 +113,7 @@ export function computeSnap(
     }
   }
 
-  // 3. Snap to edges (closest point)
+  // 3. Edges (closest point on segment)
   if (config.geometryEnabled) {
     for (const e of edges) {
       const d = distanceToSegment(rawPos, e.start, e.end);
@@ -128,11 +129,11 @@ export function computeSnap(
     }
   }
 
-  // 4. Angle snap
+  // 4. Angle snap (only when drawing from an anchor)
   if (config.angleEnabled && anchor) {
     const snappedAnglePos = snapToAngle(rawPos, anchor, config.angleStep);
     const d = distance(rawPos, snappedAnglePos);
-    if (d < screenRadius * 2) {
+    if (d < screenRadius * 3) {
       candidates.push({
         position: snappedAnglePos,
         snapType: "angle",
@@ -142,18 +143,17 @@ export function computeSnap(
     }
   }
 
-  // 5. Grid snap
+  // 5. Grid snap (always a candidate, lowest priority)
   if (config.gridEnabled) {
     const gridPos = snapToGrid(rawPos, config.gridSize);
-    const d = distance(rawPos, gridPos);
     candidates.push({
       position: gridPos,
       snapType: "grid",
-      distance: d,
+      distance: distance(rawPos, gridPos),
     });
   }
 
-  // Sort by priority: vertex > midpoint > edge > angle > grid, then distance
+  // Priority: vertex > midpoint > edge > angle > grid
   const priority: Record<SnapResult["snapType"], number> = {
     vertex: 0,
     midpoint: 1,
@@ -181,9 +181,5 @@ export function computeSnap(
     };
   }
 
-  return {
-    position: rawPos,
-    snapped: false,
-    snapType: "none",
-  };
+  return { position: rawPos, snapped: false, snapType: "none" };
 }

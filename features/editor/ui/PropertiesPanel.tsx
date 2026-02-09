@@ -7,12 +7,15 @@ import { Panel } from "@/shared/ui/Panel";
 import { NumberField } from "@/shared/ui/NumberField";
 import { distance } from "@/domain/geometry/vec2";
 import { formatLength } from "@/domain/units/units";
+import { polygonArea, polygonPerimeter } from "@/domain/geometry/polygon";
+import { Vec2 } from "@/domain/geometry/vec2";
 
 export function PropertiesPanel() {
   const plan = useEditorStore((s) => s.plan);
   const selection = useEditorStore((s) => s.selection);
   const unitConfig = useEditorStore((s) => s.unitConfig);
   const executeCommand = useEditorStore((s) => s.executeCommand);
+  const clearSelection = useEditorStore((s) => s.clearSelection);
 
   const selectedVertexIds = getSelectedIds(selection, "vertex");
   const selectedEdgeIds = getSelectedIds(selection, "edge");
@@ -53,12 +56,12 @@ export function PropertiesPanel() {
   return (
     <div className="p-4 space-y-3">
       {/* Vertex properties */}
-      {selectedVertexIds.length === 1 && (
-        <Panel title="Vertex">
-          {(() => {
-            const vertex = plan.vertices[selectedVertexIds[0]];
-            if (!vertex) return null;
-            return (
+      {selectedVertexIds.length === 1 &&
+        (() => {
+          const vertex = plan.vertices[selectedVertexIds[0]];
+          if (!vertex) return null;
+          return (
+            <Panel title="Vertex">
               <div className="space-y-2">
                 <NumberField
                   label="X"
@@ -92,30 +95,29 @@ export function PropertiesPanel() {
                       type: "REMOVE_VERTEX",
                       vertexId: vertex.id,
                     });
-                    useEditorStore.getState().clearSelection();
+                    clearSelection();
                   }}
-                  className="w-full px-2 py-1 text-xs bg-destructive/10 text-destructive rounded hover:bg-destructive/20 transition-colors"
+                  className="w-full px-2 py-1.5 text-xs bg-destructive/10 text-destructive rounded hover:bg-destructive/20 transition-colors"
                 >
                   Delete Vertex
                 </button>
               </div>
-            );
-          })()}
-        </Panel>
-      )}
+            </Panel>
+          );
+        })()}
 
       {/* Edge properties */}
-      {selectedEdgeIds.length === 1 && (
-        <Panel title="Edge">
-          {(() => {
-            const edge = plan.edges[selectedEdgeIds[0]];
-            if (!edge) return null;
-            const startV = plan.vertices[edge.startId];
-            const endV = plan.vertices[edge.endId];
-            if (!startV || !endV) return null;
-            const len = distance(startV.position, endV.position);
+      {selectedEdgeIds.length === 1 &&
+        (() => {
+          const edge = plan.edges[selectedEdgeIds[0]];
+          if (!edge) return null;
+          const startV = plan.vertices[edge.startId];
+          const endV = plan.vertices[edge.endId];
+          if (!startV || !endV) return null;
+          const len = distance(startV.position, endV.position);
 
-            return (
+          return (
+            <Panel title="Edge">
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground">
                   Length: {formatLength(len, unitConfig)}
@@ -136,35 +138,32 @@ export function PropertiesPanel() {
                 <button
                   onClick={() => {
                     executeCommand({ type: "REMOVE_EDGE", edgeId: edge.id });
-                    useEditorStore.getState().clearSelection();
+                    clearSelection();
                   }}
-                  className="w-full px-2 py-1 text-xs bg-destructive/10 text-destructive rounded hover:bg-destructive/20 transition-colors"
+                  className="w-full px-2 py-1.5 text-xs bg-destructive/10 text-destructive rounded hover:bg-destructive/20 transition-colors"
                 >
                   Delete Edge
                 </button>
               </div>
-            );
-          })()}
-        </Panel>
-      )}
+            </Panel>
+          );
+        })()}
 
       {/* Face properties */}
-      {selectedFaceIds.length === 1 && (
-        <Panel title="Face">
-          {(() => {
-            const face = plan.faces[selectedFaceIds[0]];
-            if (!face) return null;
-            const {
-              polygonArea,
-              polygonPerimeter,
-            } = require("@/domain/geometry/polygon");
-            const positions = face.vertexIds
-              .map((vid: string) => plan.vertices[vid]?.position)
-              .filter(Boolean);
-            const area = Math.abs(polygonArea(positions));
-            const perimeter = polygonPerimeter(positions);
+      {selectedFaceIds.length === 1 &&
+        (() => {
+          const face = plan.faces[selectedFaceIds[0]];
+          if (!face) return null;
+          const positions = face.vertexIds
+            .map((vid: string) => plan.vertices[vid]?.position)
+            .filter(Boolean) as Vec2[];
 
-            return (
+          if (positions.length < 3) return null;
+          const area = Math.abs(polygonArea(positions));
+          const perim = polygonPerimeter(positions);
+
+          return (
+            <Panel title="Face">
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Vertices:</span>
@@ -180,13 +179,12 @@ export function PropertiesPanel() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Perimeter:</span>
-                  <span>{formatLength(perimeter, unitConfig)}</span>
+                  <span>{formatLength(perim, unitConfig)}</span>
                 </div>
               </div>
-            );
-          })()}
-        </Panel>
-      )}
+            </Panel>
+          );
+        })()}
 
       {/* Multi-selection */}
       {selection.items.length > 1 && (

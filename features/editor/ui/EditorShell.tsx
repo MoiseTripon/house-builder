@@ -14,27 +14,27 @@ export function EditorShell() {
     <div className="flex flex-col h-screen w-full bg-background">
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
-        {/* Left toolbar */}
-        <div className="w-64 border-r border-border overflow-y-auto bg-muted/30">
+        {/* Left toolbar — shapes + snap */}
+        <div className="w-64 border-r border-border overflow-y-auto bg-muted/30 flex-shrink-0">
           <DrawToolbar />
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-w-0">
           <BuilderCanvas />
 
           {/* Mode indicator overlay */}
-          <div className="absolute top-3 left-3 px-2 py-1 bg-background/80 backdrop-blur-sm rounded text-xs font-medium border border-border">
+          <div className="absolute top-3 left-3 px-2.5 py-1.5 bg-background/80 backdrop-blur-sm rounded-md text-xs font-medium border border-border pointer-events-none select-none">
             {mode === "select" &&
-              "🔲 Select Mode — Click to select, drag to move"}
+              "🔲  Select — Click to select, drag vertices to move"}
             {mode === "draw" &&
-              "✏️ Draw Mode — Click to place points, close to form area"}
-            {mode === "split" && "✂️ Split Mode — Click on an edge to split it"}
+              "✏️  Draw — Click to place points, connect to close"}
+            {mode === "split" && "✂️  Split — Click on an edge to split it"}
           </div>
         </div>
 
-        {/* Right panel */}
-        <div className="w-72 border-l border-border overflow-y-auto bg-muted/30">
+        {/* Right panel — properties */}
+        <div className="w-72 border-l border-border overflow-y-auto bg-muted/30 flex-shrink-0">
           <PropertiesPanel />
         </div>
       </div>
