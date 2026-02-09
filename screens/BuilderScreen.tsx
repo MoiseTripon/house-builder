@@ -1,10 +1,8 @@
-import { EditorShell } from "@/features/editor";
-import { BuilderCanvas } from "@/scene/BuilderCanvas";
+"use client";
+
+import React from "react";
+import { EditorShell } from "@/features/editor/ui/EditorShell";
 
 export function BuilderScreen() {
-  return (
-    <EditorShell>
-      <BuilderCanvas />
-    </EditorShell>
-  );
+  return <EditorShell />;
 }
