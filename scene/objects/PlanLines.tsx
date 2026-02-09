@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { useEditorStore } from "@/features/editor/model/editor.store";
+import {
+  useEditorStore,
+  DragState,
+} from "@/features/editor/model/editor.store";
 import { isSelected } from "@/features/editor/model/selection.types";
 import * as THREE from "three";
 
@@ -11,6 +14,15 @@ export function PlanLines() {
   const hoveredItem = useEditorStore((s) => s.hoveredItem);
   const drawState = useEditorStore((s) => s.drawState);
   const mode = useEditorStore((s) => s.mode);
+  const dragState = useEditorStore((s) => s.dragState);
+
+  /* ----------------------------------------------------------------
+     Is a vertex part of the current drag set?
+     ---------------------------------------------------------------- */
+  const draggedVertexSet = useMemo(() => {
+    if (!dragState) return new Set<string>();
+    return new Set(dragState.vertexIds);
+  }, [dragState]);
 
   /* ----------------------------------------------------------------
      FACE fills
@@ -25,6 +37,8 @@ export function PlanLines() {
       const isSel = isSelected(selection, "face", face.id);
       const isHovered =
         hoveredItem?.type === "face" && hoveredItem.id === face.id;
+      const isDragged =
+        dragState?.type === "face" && dragState.entityId === face.id;
 
       const shape = new THREE.Shape();
       shape.moveTo(positions[0].x, positions[0].y);
@@ -34,8 +48,9 @@ export function PlanLines() {
       shape.closePath();
       const geo = new THREE.ShapeGeometry(shape);
 
-      const color = isSel ? "#60a5fa" : isHovered ? "#93c5fd" : "#334155";
-      const opacity = isSel ? 0.3 : isHovered ? 0.2 : 0.1;
+      const color =
+        isSel || isDragged ? "#60a5fa" : isHovered ? "#93c5fd" : "#334155";
+      const opacity = isSel || isDragged ? 0.3 : isHovered ? 0.2 : 0.1;
 
       return (
         <mesh key={face.id} geometry={geo} position={[0, 0, 0.05]}>
@@ -48,7 +63,7 @@ export function PlanLines() {
         </mesh>
       );
     });
-  }, [plan.faces, plan.vertices, selection, hoveredItem]);
+  }, [plan.faces, plan.vertices, selection, hoveredItem, dragState]);
 
   /* ----------------------------------------------------------------
      EDGE line segments
@@ -62,8 +77,11 @@ export function PlanLines() {
       const isHovered =
         hoveredItem?.type === "edge" && hoveredItem.id === edge.id;
       const isSel = isSelected(selection, "edge", edge.id);
+      const isDragged =
+        dragState?.type === "edge" && dragState.entityId === edge.id;
 
-      const color = isSel ? "#60a5fa" : isHovered ? "#93c5fd" : "#64748b";
+      const color =
+        isSel || isDragged ? "#60a5fa" : isHovered ? "#93c5fd" : "#64748b";
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute(
@@ -83,11 +101,14 @@ export function PlanLines() {
 
       return (
         <lineSegments key={edge.id} geometry={geo}>
-          <lineBasicMaterial color={color} linewidth={isSel ? 2 : 1} />
+          <lineBasicMaterial
+            color={color}
+            linewidth={isSel || isDragged ? 2 : 1}
+          />
         </lineSegments>
       );
     });
-  }, [plan.edges, plan.vertices, selection, hoveredItem]);
+  }, [plan.edges, plan.vertices, selection, hoveredItem, dragState]);
 
   /* ----------------------------------------------------------------
      VERTEX circles
@@ -97,19 +118,21 @@ export function PlanLines() {
       const isSel = isSelected(selection, "vertex", vertex.id);
       const isHovered =
         hoveredItem?.type === "vertex" && hoveredItem.id === vertex.id;
-
-      // Highlight vertices that are part of the current draw chain
       const isInDrawChain =
         mode === "draw" && drawState.vertexIds.includes(vertex.id);
+      const isDragged = draggedVertexSet.has(vertex.id);
 
-      const size = isSel ? 80 : isHovered || isInDrawChain ? 65 : 40;
+      const size =
+        isSel || isDragged ? 80 : isHovered || isInDrawChain ? 65 : 40;
       const color = isSel
         ? "#f59e0b"
-        : isInDrawChain
-          ? "#f59e0b"
-          : isHovered
-            ? "#fbbf24"
-            : "#94a3b8";
+        : isDragged
+          ? "#60a5fa"
+          : isInDrawChain
+            ? "#f59e0b"
+            : isHovered
+              ? "#fbbf24"
+              : "#94a3b8";
 
       return (
         <mesh
@@ -121,10 +144,17 @@ export function PlanLines() {
         </mesh>
       );
     });
-  }, [plan.vertices, selection, hoveredItem, mode, drawState.vertexIds]);
+  }, [
+    plan.vertices,
+    selection,
+    hoveredItem,
+    mode,
+    drawState.vertexIds,
+    draggedVertexSet,
+  ]);
 
   /* ----------------------------------------------------------------
-     DRAW preview line  (from last placed vertex → cursor)
+     DRAW preview line
      ---------------------------------------------------------------- */
   const drawPreviewGeo = useMemo(() => {
     if (mode !== "draw") return null;
@@ -149,19 +179,12 @@ export function PlanLines() {
     return geo;
   }, [mode, drawState, plan.vertices]);
 
-  /* ----------------------------------------------------------------
-     DRAW closing dashed hint (cursor → potential close target)
-     This is purely visual: a ring around the snap target vertex.
-     ---------------------------------------------------------------- */
   const closingTarget = useMemo(() => {
     if (mode !== "draw" || !drawState.isClosing || !drawState.previewPosition)
       return null;
     return drawState.previewPosition;
   }, [mode, drawState]);
 
-  /* ----------------------------------------------------------------
-     DRAW cursor dot
-     ---------------------------------------------------------------- */
   const cursorDot = useMemo(() => {
     if (mode !== "draw" || !drawState.previewPosition) return null;
     return drawState.previewPosition;
@@ -169,13 +192,9 @@ export function PlanLines() {
 
   return (
     <group>
-      {/* Face fills */}
       {faceElements}
-
-      {/* Edges */}
       {edgeElements}
 
-      {/* Draw preview line */}
       {drawPreviewGeo && (
         <lineSegments geometry={drawPreviewGeo}>
           <lineBasicMaterial
@@ -187,7 +206,6 @@ export function PlanLines() {
         </lineSegments>
       )}
 
-      {/* Closing snap ring */}
       {closingTarget && (
         <mesh position={[closingTarget.x, closingTarget.y, 0.35]}>
           <ringGeometry args={[70, 110, 24]} />
@@ -195,10 +213,8 @@ export function PlanLines() {
         </mesh>
       )}
 
-      {/* Vertices */}
       {vertexElements}
 
-      {/* Draw cursor dot */}
       {cursorDot && (
         <mesh position={[cursorDot.x, cursorDot.y, 0.4]}>
           <circleGeometry args={[55, 16]} />

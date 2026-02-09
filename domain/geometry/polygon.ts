@@ -1,4 +1,4 @@
-import { Vec2, sub, cross, distance } from "./vec2";
+import { Vec2, sub, cross, distance, dot, length as vecLength } from "./vec2";
 
 export function polygonArea(vertices: Vec2[]): number {
   let area = 0;
@@ -68,7 +68,6 @@ export function polygonCentroid(vertices: Vec2[]): Vec2 {
   }
   area /= 2;
   if (Math.abs(area) < 1e-10) {
-    // Degenerate polygon, return average
     const avg = vertices.reduce(
       (acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y }),
       { x: 0, y: 0 },
@@ -97,4 +96,93 @@ export function isConvex(vertices: Vec2[]): boolean {
     }
   }
   return true;
+}
+
+/**
+ * Compute interior angle at one vertex of a polygon.
+ * Returns radians in (0, 2π).
+ */
+export function interiorAngleAt(vertices: Vec2[], index: number): number {
+  const n = vertices.length;
+  if (n < 3) return 0;
+
+  const prev = vertices[(index - 1 + n) % n];
+  const curr = vertices[index];
+  const next = vertices[(index + 1) % n];
+
+  const a = sub(prev, curr);
+  const b = sub(next, curr);
+
+  const lenA = vecLength(a);
+  const lenB = vecLength(b);
+  if (lenA < 1e-10 || lenB < 1e-10) return 0;
+
+  const cosAngle = dot(a, b) / (lenA * lenB);
+  const baseAngle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+  const crossVal = cross(a, b);
+
+  // Determine polygon winding
+  const isCCW = polygonSignedArea(vertices) > 0;
+
+  // For CCW: cross > 0 at vertex ⇒ convex (interior < π)
+  // For CW:  cross < 0 at vertex ⇒ convex (interior < π)
+  const isConvexVertex = isCCW ? crossVal > 0 : crossVal < 0;
+
+  if (isConvexVertex || Math.abs(crossVal) < 1e-10) {
+    return baseAngle;
+  }
+  return 2 * Math.PI - baseAngle;
+}
+
+/**
+ * All interior angles for a polygon, one per vertex, in radians.
+ */
+export function polygonInteriorAngles(vertices: Vec2[]): number[] {
+  return vertices.map((_, i) => interiorAngleAt(vertices, i));
+}
+
+/**
+ * Build arc points for visualising the interior angle at a vertex.
+ * Returns an array of positions along the arc.
+ */
+export function interiorArcPoints(
+  center: Vec2,
+  prevPos: Vec2,
+  nextPos: Vec2,
+  isCCW: boolean,
+  radius: number,
+  segments: number = 24,
+): Vec2[] {
+  const v1 = sub(prevPos, center);
+  const v2 = sub(nextPos, center);
+
+  const len1 = vecLength(v1);
+  const len2 = vecLength(v2);
+  if (len1 < 1e-10 || len2 < 1e-10) return [];
+
+  const startAngle = Math.atan2(v1.y / len1, v1.x / len1);
+  const endAngle = Math.atan2(v2.y / len2, v2.x / len2);
+
+  let sweep = endAngle - startAngle;
+
+  if (isCCW) {
+    // Interior arc goes CW (negative sweep)
+    if (sweep > 0) sweep -= 2 * Math.PI;
+    if (Math.abs(sweep) < 1e-10) sweep = -2 * Math.PI;
+  } else {
+    // Interior arc goes CCW (positive sweep)
+    if (sweep < 0) sweep += 2 * Math.PI;
+    if (Math.abs(sweep) < 1e-10) sweep = 2 * Math.PI;
+  }
+
+  const points: Vec2[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const a = startAngle + sweep * t;
+    points.push({
+      x: center.x + Math.cos(a) * radius,
+      y: center.y + Math.sin(a) * radius,
+    });
+  }
+  return points;
 }
