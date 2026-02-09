@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useEditorStore } from "../model/editor.store";
 import { getSelectedIds } from "../model/selection.types";
 import { Panel } from "@/shared/ui/Panel";
@@ -12,6 +12,7 @@ import {
   polygonPerimeter,
   polygonInteriorAngles,
   interiorAngleAt,
+  polygonCentroid,
 } from "@/domain/geometry/polygon";
 
 function radToDeg(r: number) {
@@ -39,6 +40,38 @@ export function PropertiesPanel() {
   const selectedFaceIds = getSelectedIds(selection, "face");
 
   const hasSelection = selection.items.length > 0;
+
+  /* ================================================================
+     Face bounding box (for resize)
+     ================================================================ */
+  const faceBounds = useMemo(() => {
+    if (selectedFaceIds.length !== 1) return null;
+    const face = plan.faces[selectedFaceIds[0]];
+    if (!face) return null;
+
+    const positions = face.vertexIds
+      .map((vid) => plan.vertices[vid]?.position)
+      .filter(Boolean) as Vec2[];
+    if (positions.length < 3) return null;
+
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (const p of positions) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+
+    return {
+      width: maxX - minX,
+      height: maxY - minY,
+      center: polygonCentroid(positions),
+      positions,
+    };
+  }, [plan, selectedFaceIds]);
 
   /* ================================================================
      NO SELECTION
@@ -75,7 +108,6 @@ export function PropertiesPanel() {
           const containingFaces = Object.values(plan.faces).filter((f) =>
             f.vertexIds.includes(vertex.id),
           );
-
           const faceAngles = containingFaces
             .map((face) => {
               const positions = face.vertexIds
@@ -203,9 +235,6 @@ export function PropertiesPanel() {
                     })
                   }
                 />
-                <div className="text-[10px] text-muted-foreground">
-                  Drag the edge to translate it.
-                </div>
                 <button
                   onClick={() => {
                     executeCommand({ type: "REMOVE_EDGE", edgeId: edge.id });
@@ -253,24 +282,108 @@ export function PropertiesPanel() {
                     label="Perimeter"
                     value={formatLength(perim, unitConfig)}
                   />
-                  <div className="text-[10px] text-muted-foreground pt-1">
-                    Drag inside the face to move the entire shape.
-                  </div>
                 </div>
               </Panel>
 
-              <Panel title="Interior Angles">
+              {/* Scale / Resize */}
+              {faceBounds && (
+                <Panel title="Resize Face">
+                  <div className="space-y-2">
+                    <NumberField
+                      label="Width"
+                      suffix="mm"
+                      value={Math.round(faceBounds.width)}
+                      min={100}
+                      step={100}
+                      onChange={(newW) => {
+                        if (faceBounds.width < 1) return;
+                        const sx = newW / faceBounds.width;
+                        executeCommand({
+                          type: "SCALE_FACE",
+                          faceId: face.id,
+                          scaleX: sx,
+                          scaleY: 1,
+                          center: faceBounds.center,
+                        });
+                      }}
+                    />
+                    <NumberField
+                      label="Height"
+                      suffix="mm"
+                      value={Math.round(faceBounds.height)}
+                      min={100}
+                      step={100}
+                      onChange={(newH) => {
+                        if (faceBounds.height < 1) return;
+                        const sy = newH / faceBounds.height;
+                        executeCommand({
+                          type: "SCALE_FACE",
+                          faceId: face.id,
+                          scaleX: 1,
+                          scaleY: sy,
+                          center: faceBounds.center,
+                        });
+                      }}
+                    />
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() =>
+                          executeCommand({
+                            type: "SCALE_FACE",
+                            faceId: face.id,
+                            scaleX: 0.9,
+                            scaleY: 0.9,
+                            center: faceBounds.center,
+                          })
+                        }
+                        className="flex-1 px-2 py-1.5 text-xs border border-border rounded hover:bg-muted transition-colors"
+                        title="Scale down 10%  [ "
+                      >
+                        − 10%
+                      </button>
+                      <button
+                        onClick={() =>
+                          executeCommand({
+                            type: "SCALE_FACE",
+                            faceId: face.id,
+                            scaleX: 1.1,
+                            scaleY: 1.1,
+                            center: faceBounds.center,
+                          })
+                        }
+                        className="flex-1 px-2 py-1.5 text-xs border border-border rounded hover:bg-muted transition-colors"
+                        title="Scale up 10%  ] "
+                      >
+                        + 10%
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Shortcuts:{" "}
+                      <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">
+                        [
+                      </kbd>{" "}
+                      shrink ·{" "}
+                      <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">
+                        ]
+                      </kbd>{" "}
+                      grow
+                    </div>
+                  </div>
+                </Panel>
+              )}
+
+              {/* Interior Angles */}
+              <Panel title="Interior Angles" collapsible>
                 <div className="space-y-1.5">
                   {angles.map((angleRad, i) => {
-                    const angleDeg = radToDeg(angleRad);
-                    const isRight = Math.abs(angleDeg - 90) < 0.5;
-                    const isStraight = Math.abs(angleDeg - 180) < 0.5;
-                    const isReflex = angleDeg > 180.5;
+                    const deg = radToDeg(angleRad);
+                    const isRight = Math.abs(deg - 90) < 0.5;
+                    const isStraight = Math.abs(deg - 180) < 0.5;
+                    const isReflex = deg > 180.5;
 
-                    let dotColor = "#f59e0b"; // amber
-                    if (isRight) dotColor = "#22c55e"; // green
-                    if (isStraight) dotColor = "#ef4444"; // red
-                    if (isReflex) dotColor = "#ef4444"; // red
+                    let dotColor = "#f59e0b";
+                    if (isRight) dotColor = "#22c55e";
+                    if (isStraight || isReflex) dotColor = "#ef4444";
 
                     return (
                       <div
@@ -279,13 +392,13 @@ export function PropertiesPanel() {
                       >
                         <span className="text-muted-foreground flex items-center gap-1.5">
                           <span
-                            className="w-2 h-2 rounded-full shrink-0"
+                            className="w-2 h-2 rounded-full flex-shrink-0"
                             style={{ backgroundColor: dotColor }}
                           />
                           V{i + 1}
                         </span>
                         <span className="font-mono font-medium text-amber-500">
-                          {angleDeg.toFixed(1)}°
+                          {deg.toFixed(1)}°
                         </span>
                       </div>
                     );
@@ -303,6 +416,19 @@ export function PropertiesPanel() {
                     {radToDeg(expectedSum).toFixed(0)}°
                   </div>
                 </div>
+              </Panel>
+
+              {/* Delete face */}
+              <Panel title="Actions">
+                <button
+                  onClick={() => {
+                    executeCommand({ type: "DELETE_FACE", faceId: face.id });
+                    clearSelection();
+                  }}
+                  className="w-full px-2 py-1.5 text-xs bg-destructive/10 text-destructive rounded hover:bg-destructive/20 transition-colors"
+                >
+                  Delete Entire Face
+                </button>
               </Panel>
             </>
           );

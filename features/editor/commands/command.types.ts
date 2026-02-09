@@ -22,5 +22,21 @@ export type Command =
       cutoutWidth: number;
       cutoutHeight: number;
     }
+  | {
+      type: "CREATE_U_SHAPE";
+      center: Vec2;
+      totalWidth: number;
+      totalHeight: number;
+      cutoutWidth: number;
+      cutoutHeight: number;
+    }
   | { type: "MERGE_VERTICES"; keepId: string; removeId: string }
+  | {
+      type: "SCALE_FACE";
+      faceId: string;
+      scaleX: number;
+      scaleY: number;
+      center?: Vec2;
+    }
+  | { type: "DELETE_FACE"; faceId: string }
   | { type: "BATCH"; commands: Command[]; label: string };

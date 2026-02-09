@@ -1,5 +1,8 @@
 import { useEffect, useCallback } from "react";
 import { useEditorStore } from "../model/editor.store";
+import { getSelectedIds } from "../model/selection.types";
+import { polygonCentroid } from "@/domain/geometry/polygon";
+import { Vec2 } from "@/domain/geometry/vec2";
 
 export function useEditorShortcuts() {
   const {
@@ -11,6 +14,7 @@ export function useEditorShortcuts() {
     selection,
     executeCommand,
     resetDrawState,
+    plan,
   } = useEditorStore();
 
   const handleKeyDown = useCallback(
@@ -23,24 +27,20 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Undo/Redo
+      // Undo / Redo
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
         e.preventDefault();
-        if (e.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
+        if (e.shiftKey) redo();
+        else undo();
         return;
       }
-
       if ((e.metaKey || e.ctrlKey) && e.key === "y") {
         e.preventDefault();
         redo();
         return;
       }
 
-      // Escape — cancel draw or clear selection
+      // Escape
       if (e.key === "Escape") {
         if (mode === "draw") {
           resetDrawState();
@@ -54,25 +54,60 @@ export function useEditorShortcuts() {
       // Delete
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selection.items.length === 0) return;
-        // Collect all commands first, then execute
-        const cmds = selection.items
-          .map((item) => {
-            if (item.type === "vertex")
-              return { type: "REMOVE_VERTEX" as const, vertexId: item.id };
-            if (item.type === "edge")
-              return { type: "REMOVE_EDGE" as const, edgeId: item.id };
-            return null;
-          })
-          .filter(Boolean);
+
+        const faceIds = getSelectedIds(selection, "face");
+        const vertexIds = getSelectedIds(selection, "vertex");
+        const edgeIds = getSelectedIds(selection, "edge");
+
+        const cmds: any[] = [];
+
+        // Delete faces first (removes their exclusive edges/vertices)
+        for (const fid of faceIds) {
+          cmds.push({ type: "DELETE_FACE", faceId: fid });
+        }
+        // Then edges
+        for (const eid of edgeIds) {
+          cmds.push({ type: "REMOVE_EDGE", edgeId: eid });
+        }
+        // Then vertices
+        for (const vid of vertexIds) {
+          cmds.push({ type: "REMOVE_VERTEX", vertexId: vid });
+        }
 
         if (cmds.length > 0) {
           executeCommand({
             type: "BATCH",
             label: "Delete selection",
-            commands: cmds as any,
+            commands: cmds,
           });
         }
         clearSelection();
+        return;
+      }
+
+      // Scale face:  [  shrink 10%   ]  grow 10%
+      if (e.key === "[" || e.key === "]") {
+        const faceIds = getSelectedIds(selection, "face");
+        if (faceIds.length !== 1) return;
+
+        const face = plan.faces[faceIds[0]];
+        if (!face) return;
+
+        const positions = face.vertexIds
+          .map((vid) => plan.vertices[vid]?.position)
+          .filter(Boolean) as Vec2[];
+        if (positions.length < 3) return;
+
+        const center = polygonCentroid(positions);
+        const factor = e.key === "]" ? 1.1 : 0.9;
+
+        executeCommand({
+          type: "SCALE_FACE",
+          faceId: face.id,
+          scaleX: factor,
+          scaleY: factor,
+          center,
+        });
         return;
       }
 
@@ -101,6 +136,7 @@ export function useEditorShortcuts() {
       selection,
       executeCommand,
       resetDrawState,
+      plan,
     ],
   );
 

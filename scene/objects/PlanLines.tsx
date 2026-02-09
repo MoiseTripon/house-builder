@@ -13,9 +13,6 @@ export function PlanLines() {
   const mode = useEditorStore((s) => s.mode);
   const dragState = useEditorStore((s) => s.dragState);
 
-  /* ----------------------------------------------------------------
-     Which edges belong to at least one face?
-     ---------------------------------------------------------------- */
   const edgesInFaces = useMemo(() => {
     const set = new Set<string>();
     for (const face of Object.values(plan.faces)) {
@@ -24,17 +21,12 @@ export function PlanLines() {
     return set;
   }, [plan.faces]);
 
-  /* ----------------------------------------------------------------
-     Dragged vertex set
-     ---------------------------------------------------------------- */
   const draggedVertexSet = useMemo(() => {
     if (!dragState) return new Set<string>();
     return new Set(dragState.vertexIds);
   }, [dragState]);
 
-  /* ----------------------------------------------------------------
-     FACE fills
-     ---------------------------------------------------------------- */
+  /* ---- FACE fills ---- */
   const faceElements = useMemo(() => {
     return Object.values(plan.faces).map((face) => {
       const positions = face.vertexIds
@@ -50,9 +42,8 @@ export function PlanLines() {
 
       const shape = new THREE.Shape();
       shape.moveTo(positions[0].x, positions[0].y);
-      for (let i = 1; i < positions.length; i++) {
+      for (let i = 1; i < positions.length; i++)
         shape.lineTo(positions[i].x, positions[i].y);
-      }
       shape.closePath();
       const geo = new THREE.ShapeGeometry(shape);
 
@@ -73,9 +64,7 @@ export function PlanLines() {
     });
   }, [plan.faces, plan.vertices, selection, hoveredItem, dragState]);
 
-  /* ----------------------------------------------------------------
-     EDGES — separate orphan (not in any face) from normal
-     ---------------------------------------------------------------- */
+  /* ---- EDGES ---- */
   const edgeElements = useMemo(() => {
     return Object.values(plan.edges).map((edge) => {
       const start = plan.vertices[edge.startId];
@@ -90,15 +79,10 @@ export function PlanLines() {
       const isOrphan = !edgesInFaces.has(edge.id);
 
       let color: string;
-      if (isSel || isDragged) {
-        color = "#60a5fa";
-      } else if (isHovered) {
-        color = "#93c5fd";
-      } else if (isOrphan) {
-        color = "#f97316"; // orange for edges not in any face
-      } else {
-        color = "#64748b";
-      }
+      if (isSel || isDragged) color = "#60a5fa";
+      else if (isHovered) color = "#93c5fd";
+      else if (isOrphan) color = "#f97316";
+      else color = "#64748b";
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute(
@@ -134,9 +118,7 @@ export function PlanLines() {
     edgesInFaces,
   ]);
 
-  /* ----------------------------------------------------------------
-     VERTEX circles
-     ---------------------------------------------------------------- */
+  /* ---- VERTICES ---- */
   const vertexElements = useMemo(() => {
     return Object.values(plan.vertices).map((vertex) => {
       const isSel = isSelected(selection, "vertex", vertex.id);
@@ -177,14 +159,14 @@ export function PlanLines() {
     draggedVertexSet,
   ]);
 
-  /* ----------------------------------------------------------------
-     DRAW preview line
-     ---------------------------------------------------------------- */
+  /* ---- DRAW preview ---- */
   const drawPreviewGeo = useMemo(() => {
-    if (mode !== "draw") return null;
-    if (drawState.vertexIds.length === 0 || !drawState.previewPosition)
+    if (
+      mode !== "draw" ||
+      drawState.vertexIds.length === 0 ||
+      !drawState.previewPosition
+    )
       return null;
-
     const lastId = drawState.vertexIds[drawState.vertexIds.length - 1];
     const lastV = plan.vertices[lastId];
     if (!lastV) return null;
@@ -211,7 +193,6 @@ export function PlanLines() {
     mode === "draw" && drawState.isClosing && drawState.previewPosition
       ? drawState.previewPosition
       : null;
-
   const cursorDot =
     mode === "draw" && drawState.previewPosition
       ? drawState.previewPosition

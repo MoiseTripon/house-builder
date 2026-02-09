@@ -20,9 +20,7 @@ export function isClockwise(vertices: Vec2[]): boolean {
 }
 
 export function ensureCCW(vertices: Vec2[]): Vec2[] {
-  if (isClockwise(vertices)) {
-    return [...vertices].reverse();
-  }
+  if (isClockwise(vertices)) return [...vertices].reverse();
   return vertices;
 }
 
@@ -30,8 +28,7 @@ export function polygonPerimeter(vertices: Vec2[]): number {
   let perimeter = 0;
   const n = vertices.length;
   for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    perimeter += distance(vertices[i], vertices[j]);
+    perimeter += distance(vertices[i], vertices[(i + 1) % n]);
   }
   return perimeter;
 }
@@ -56,8 +53,8 @@ export function pointInPolygon(point: Vec2, polygon: Vec2[]): boolean {
 
 export function polygonCentroid(vertices: Vec2[]): Vec2 {
   let cx = 0,
-    cy = 0;
-  let area = 0;
+    cy = 0,
+    area = 0;
   const n = vertices.length;
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
@@ -84,16 +81,13 @@ export function isConvex(vertices: Vec2[]): boolean {
   if (n < 3) return false;
   let sign: number | null = null;
   for (let i = 0; i < n; i++) {
-    const a = vertices[i];
-    const b = vertices[(i + 1) % n];
-    const c = vertices[(i + 2) % n];
-    const cp = cross(sub(b, a), sub(c, b));
+    const cp = cross(
+      sub(vertices[(i + 1) % n], vertices[i]),
+      sub(vertices[(i + 2) % n], vertices[(i + 1) % n]),
+    );
     if (Math.abs(cp) < 1e-10) continue;
-    if (sign === null) {
-      sign = cp > 0 ? 1 : -1;
-    } else if ((cp > 0 ? 1 : -1) !== sign) {
-      return false;
-    }
+    if (sign === null) sign = cp > 0 ? 1 : -1;
+    else if ((cp > 0 ? 1 : -1) !== sign) return false;
   }
   return true;
 }
@@ -101,10 +95,10 @@ export function isConvex(vertices: Vec2[]): boolean {
 /**
  * Interior angle at vertex `index` of a polygon.
  *
- * Uses vectors a = prev−curr and b = next−curr.
+ * Vectors a = prev−curr, b = next−curr.
  *
- *  CCW polygon  ⇒  cross(a,b) < 0  at convex vertex  (interior < π)
- *  CW  polygon  ⇒  cross(a,b) > 0  at convex vertex  (interior < π)
+ *  CCW polygon  ⇒  cross(a,b) < 0  at convex vertex  ⇒  interior < π
+ *  CW  polygon  ⇒  cross(a,b) > 0  at convex vertex  ⇒  interior < π
  *
  * Returns radians in (0, 2π).
  */
@@ -118,43 +112,32 @@ export function interiorAngleAt(vertices: Vec2[], index: number): number {
 
   const a = sub(prev, curr);
   const b = sub(next, curr);
-
   const lenA = vecLength(a);
   const lenB = vecLength(b);
   if (lenA < 1e-10 || lenB < 1e-10) return 0;
 
-  const cosAngle = dot(a, b) / (lenA * lenB);
-  const clamped = Math.max(-1, Math.min(1, cosAngle));
-  const baseAngle = Math.acos(clamped);
-
+  const cosAngle = Math.max(-1, Math.min(1, dot(a, b) / (lenA * lenB)));
+  const baseAngle = Math.acos(cosAngle);
   const crossVal = cross(a, b);
 
-  // Degenerate — treat as straight (π)
   if (Math.abs(crossVal) < 1e-10) return baseAngle;
 
   const isCCW = polygonSignedArea(vertices) > 0;
-
-  // For CCW: cross(a,b) < 0 → convex vertex (interior < π)
-  // For CW : cross(a,b) > 0 → convex vertex (interior < π)
   const isConvexVertex = isCCW ? crossVal < 0 : crossVal > 0;
 
   return isConvexVertex ? baseAngle : 2 * Math.PI - baseAngle;
 }
 
-/**
- * All interior angles for a polygon, one per vertex, in radians.
- */
 export function polygonInteriorAngles(vertices: Vec2[]): number[] {
   return vertices.map((_, i) => interiorAngleAt(vertices, i));
 }
 
 /**
- * Build an arc as line-segment pairs suitable for `<lineSegments>`.
+ * Build an arc as paired points for `<lineSegments>`.
  *
- * For a CCW polygon the interior arc sweeps CW (negative).
- * For a CW  polygon the interior arc sweeps CCW (positive).
- *
- * Returns flat [x,y,z, x,y,z, …] with pairs of points.
+ * The arc sweeps through the INTERIOR of the polygon at the given vertex.
+ *  CCW polygon → interior sweep is CW (negative)
+ *  CW polygon  → interior sweep is CCW (positive)
  */
 export function interiorArcSegments(
   center: Vec2,
@@ -167,7 +150,6 @@ export function interiorArcSegments(
 ): number[] {
   const v1 = sub(prevPos, center);
   const v2 = sub(nextPos, center);
-
   const len1 = vecLength(v1);
   const len2 = vecLength(v2);
   if (len1 < 1e-10 || len2 < 1e-10) return [];
@@ -178,16 +160,15 @@ export function interiorArcSegments(
   let sweep = endAngle - startAngle;
 
   if (isCCW) {
-    // Interior arc goes CW (negative sweep)
+    // interior is CW → negative sweep
     if (sweep > 0) sweep -= 2 * Math.PI;
-    if (Math.abs(sweep) < 1e-10) sweep = -2 * Math.PI;
+    if (sweep > -1e-10) sweep = -2 * Math.PI;
   } else {
-    // Interior arc goes CCW (positive sweep)
+    // interior is CCW → positive sweep
     if (sweep < 0) sweep += 2 * Math.PI;
-    if (Math.abs(sweep) < 1e-10) sweep = 2 * Math.PI;
+    if (sweep < 1e-10) sweep = 2 * Math.PI;
   }
 
-  // Build consecutive pairs for lineSegments
   const pts: number[] = [];
   let px = center.x + Math.cos(startAngle) * radius;
   let py = center.y + Math.sin(startAngle) * radius;
@@ -201,12 +182,11 @@ export function interiorArcSegments(
     px = nx;
     py = ny;
   }
-
   return pts;
 }
 
 /**
- * Position for the angle label, pushed inward from the vertex.
+ * Position for an angle label, pushed along the bisector of the interior arc.
  */
 export function angleLabelPosition(
   center: Vec2,
@@ -217,7 +197,6 @@ export function angleLabelPosition(
 ): Vec2 {
   const v1 = sub(prevPos, center);
   const v2 = sub(nextPos, center);
-
   const len1 = vecLength(v1);
   const len2 = vecLength(v2);
   if (len1 < 1e-10 || len2 < 1e-10) return center;
@@ -226,18 +205,15 @@ export function angleLabelPosition(
   const endAngle = Math.atan2(v2.y, v2.x);
 
   let sweep = endAngle - startAngle;
-
   if (isCCW) {
     if (sweep > 0) sweep -= 2 * Math.PI;
-    if (Math.abs(sweep) < 1e-10) sweep = -2 * Math.PI;
+    if (sweep > -1e-10) sweep = -2 * Math.PI;
   } else {
     if (sweep < 0) sweep += 2 * Math.PI;
-    if (Math.abs(sweep) < 1e-10) sweep = 2 * Math.PI;
+    if (sweep < 1e-10) sweep = 2 * Math.PI;
   }
 
-  // Midpoint of sweep
   const midAngle = startAngle + sweep / 2;
-
   return {
     x: center.x + Math.cos(midAngle) * offset,
     y: center.y + Math.sin(midAngle) * offset,
