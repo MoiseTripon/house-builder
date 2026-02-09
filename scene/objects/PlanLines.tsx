@@ -26,7 +26,30 @@ export function PlanLines() {
     return new Set(dragState.vertexIds);
   }, [dragState]);
 
-  /* ---- FACE fills ---- */
+  /* ---- Merge indicator: is the dragged vertex near another vertex? ---- */
+  const mergeTarget = useMemo(() => {
+    if (
+      !dragState ||
+      dragState.type !== "vertex" ||
+      dragState.vertexIds.length !== 1
+    )
+      return null;
+    const vid = dragState.vertexIds[0];
+    const v = plan.vertices[vid];
+    if (!v) return null;
+
+    for (const other of Object.values(plan.vertices)) {
+      if (other.id === vid) continue;
+      const dx = v.position.x - other.position.x;
+      const dy = v.position.y - other.position.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 80) {
+        return other.position;
+      }
+    }
+    return null;
+  }, [dragState, plan.vertices]);
+
+  /* FACES */
   const faceElements = useMemo(() => {
     return Object.values(plan.faces).map((face) => {
       const positions = face.vertexIds
@@ -64,7 +87,7 @@ export function PlanLines() {
     });
   }, [plan.faces, plan.vertices, selection, hoveredItem, dragState]);
 
-  /* ---- EDGES ---- */
+  /* EDGES */
   const edgeElements = useMemo(() => {
     return Object.values(plan.edges).map((edge) => {
       const start = plan.vertices[edge.startId];
@@ -118,7 +141,7 @@ export function PlanLines() {
     edgesInFaces,
   ]);
 
-  /* ---- VERTICES ---- */
+  /* VERTICES */
   const vertexElements = useMemo(() => {
     return Object.values(plan.vertices).map((vertex) => {
       const isSel = isSelected(selection, "vertex", vertex.id);
@@ -159,7 +182,7 @@ export function PlanLines() {
     draggedVertexSet,
   ]);
 
-  /* ---- DRAW preview ---- */
+  /* DRAW preview line */
   const drawPreviewGeo = useMemo(() => {
     if (
       mode !== "draw" ||
@@ -230,6 +253,14 @@ export function PlanLines() {
             opacity={0.6}
             transparent
           />
+        </mesh>
+      )}
+
+      {/* Merge indicator ring */}
+      {mergeTarget && (
+        <mesh position={[mergeTarget.x, mergeTarget.y, 0.45]}>
+          <ringGeometry args={[90, 130, 24]} />
+          <meshBasicMaterial color="#ec4899" opacity={0.8} transparent />
         </mesh>
       )}
     </group>

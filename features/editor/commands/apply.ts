@@ -50,6 +50,9 @@ export function applyCommand(plan: Plan, command: Command): Plan {
       }).plan;
     case "MERGE_VERTICES":
       return mutations.mergeVertices(plan, command.keepId, command.removeId);
+    case "SPLIT_EDGE":
+      return mutations.splitEdgeAtPoint(plan, command.edgeId, command.position)
+        .plan;
     case "SCALE_FACE":
       return mutations.scaleFace(
         plan,
@@ -62,9 +65,7 @@ export function applyCommand(plan: Plan, command: Command): Plan {
       return mutations.deleteFace(plan, command.faceId);
     case "BATCH": {
       let current = plan;
-      for (const cmd of command.commands) {
-        current = applyCommand(current, cmd);
-      }
+      for (const cmd of command.commands) current = applyCommand(current, cmd);
       return current;
     }
   }

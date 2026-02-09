@@ -1,5 +1,12 @@
 import { Plan, Vertex, Edge, Face, findVertexNear, edgeExists } from "./types";
-import { Vec2, distance, sub, add, scale as vecScale } from "../geometry/vec2";
+import {
+  Vec2,
+  distance,
+  sub,
+  add,
+  scale as vecScale,
+  closestPointOnSegment,
+} from "../geometry/vec2";
 import { generateId } from "../../shared/lib/ids";
 import { rebuildFaces } from "./faces";
 import { polygonCentroid } from "../geometry/polygon";
@@ -42,6 +49,7 @@ export function addEdge(
   startId: string,
   endId: string,
 ): { plan: Plan; edgeId: string } {
+  if (startId === endId) return { plan, edgeId: "" };
   const existing = Object.values(plan.edges).find(
     (e) =>
       (e.startId === startId && e.endId === endId) ||
@@ -76,24 +84,36 @@ export function addVertexAndEdge(
   return { plan: plan2, vertexId, edgeId };
 }
 
+/**
+ * Merge two vertices: redirect all edges from `removeId` to `keepId`,
+ * remove duplicate/degenerate edges, remove the old vertex, rebuild faces.
+ */
 export function mergeVertices(
   plan: Plan,
   keepId: string,
   removeId: string,
-  tolerance: number = 50,
 ): Plan {
+  if (keepId === removeId) return plan;
   const keep = plan.vertices[keepId];
   const remove = plan.vertices[removeId];
   if (!keep || !remove) return plan;
-  if (distance(keep.position, remove.position) > tolerance) return plan;
 
   const updatedEdges: Record<string, Edge> = {};
+  const seenPairs = new Set<string>();
+
   for (const [eid, edge] of Object.entries(plan.edges)) {
-    let newEdge = edge;
-    if (edge.startId === removeId) newEdge = { ...newEdge, startId: keepId };
-    if (edge.endId === removeId) newEdge = { ...newEdge, endId: keepId };
-    if (newEdge.startId === newEdge.endId) continue;
-    updatedEdges[eid] = newEdge;
+    let sId = edge.startId === removeId ? keepId : edge.startId;
+    let eId = edge.endId === removeId ? keepId : edge.endId;
+
+    // Skip degenerate
+    if (sId === eId) continue;
+
+    // Canonical pair key to skip duplicates
+    const pairKey = sId < eId ? `${sId}:${eId}` : `${eId}:${sId}`;
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+
+    updatedEdges[eid] = { ...edge, startId: sId, endId: eId };
   }
 
   const { [removeId]: _, ...remainingVertices } = plan.vertices;
@@ -138,6 +158,68 @@ export function setEdgeLength(
   }
 }
 
+/**
+ * Split an edge by inserting a vertex at `position`.
+ * Removes the old edge, creates two new edges through the new vertex.
+ * Returns the new vertex id.
+ */
+export function splitEdgeAtPoint(
+  plan: Plan,
+  edgeId: string,
+  position: Vec2,
+): { plan: Plan; vertexId: string } {
+  const edge = plan.edges[edgeId];
+  if (!edge) return { plan, vertexId: "" };
+
+  const { plan: p1, vertexId } = addVertex(plan, position);
+  let p2 = removeEdge(p1, edgeId);
+  const { plan: p3 } = addEdge(p2, edge.startId, vertexId);
+  const { plan: p4 } = addEdge(p3, vertexId, edge.endId);
+
+  return { plan: p4, vertexId };
+}
+
+/**
+ * Find if a point lies on any edge (within tolerance).
+ * Returns the edge id and the closest point on it, or null.
+ */
+export function findEdgeAtPoint(
+  plan: Plan,
+  position: Vec2,
+  tolerance: number,
+): { edgeId: string; point: Vec2; t: number } | null {
+  let bestEdgeId: string | null = null;
+  let bestDist = Infinity;
+  let bestPoint: Vec2 | null = null;
+  let bestT = 0;
+
+  for (const edge of Object.values(plan.edges)) {
+    const start = plan.vertices[edge.startId];
+    const end = plan.vertices[edge.endId];
+    if (!start || !end) continue;
+
+    const { point, t } = closestPointOnSegment(
+      position,
+      start.position,
+      end.position,
+    );
+    const d = distance(position, point);
+
+    // Avoid snapping to endpoints (those are vertex snaps)
+    if (d < tolerance && t > 0.02 && t < 0.98 && d < bestDist) {
+      bestDist = d;
+      bestEdgeId = edge.id;
+      bestPoint = point;
+      bestT = t;
+    }
+  }
+
+  if (bestEdgeId && bestPoint) {
+    return { edgeId: bestEdgeId, point: bestPoint, t: bestT };
+  }
+  return null;
+}
+
 export function scaleFace(
   plan: Plan,
   faceId: string,
@@ -174,40 +256,31 @@ export function deleteFace(plan: Plan, faceId: string): Plan {
   const face = plan.faces[faceId];
   if (!face) return plan;
 
-  // Find which edges are exclusive to this face
   const otherFaces = Object.values(plan.faces).filter((f) => f.id !== faceId);
   const sharedEdgeIds = new Set<string>();
   for (const of_ of otherFaces) {
-    for (const eid of of_.edgeIds) {
-      sharedEdgeIds.add(eid);
-    }
+    for (const eid of of_.edgeIds) sharedEdgeIds.add(eid);
   }
 
   const edgesToRemove = face.edgeIds.filter((eid) => !sharedEdgeIds.has(eid));
 
   let newPlan = { ...plan };
-
-  // Remove exclusive edges
   for (const eid of edgesToRemove) {
     newPlan = removeEdge(newPlan, eid);
   }
 
-  // Remove the face itself (removeEdge might have already done this)
   const { [faceId]: _, ...remainingFaces } = newPlan.faces;
   newPlan = { ...newPlan, faces: remainingFaces };
 
-  // Find orphan vertices (not connected to any remaining edge)
+  // Clean orphan vertices
   const usedVertexIds = new Set<string>();
   for (const edge of Object.values(newPlan.edges)) {
     usedVertexIds.add(edge.startId);
     usedVertexIds.add(edge.endId);
   }
-
   const cleanedVertices: Record<string, Vertex> = {};
   for (const [vid, v] of Object.entries(newPlan.vertices)) {
-    if (usedVertexIds.has(vid)) {
-      cleanedVertices[vid] = v;
-    }
+    if (usedVertexIds.has(vid)) cleanedVertices[vid] = v;
   }
 
   return { ...newPlan, vertices: cleanedVertices };
@@ -233,28 +306,23 @@ export function createRectangle(
     { x: center.x - hw, y: center.y + hh },
   ];
 
-  let currentPlan = plan;
-  const vertexIds: string[] = [];
-  const edgeIds: string[] = [];
+  let cp = plan;
+  const vids: string[] = [];
+  const eids: string[] = [];
 
   for (const pos of positions) {
-    const { plan: p, vertexId } = addVertex(currentPlan, pos);
-    currentPlan = p;
-    vertexIds.push(vertexId);
+    const { plan: p, vertexId } = addVertex(cp, pos);
+    cp = p;
+    vids.push(vertexId);
   }
   for (let i = 0; i < 4; i++) {
-    const { plan: p, edgeId } = addEdge(
-      currentPlan,
-      vertexIds[i],
-      vertexIds[(i + 1) % 4],
-    );
-    currentPlan = p;
-    edgeIds.push(edgeId);
+    const { plan: p, edgeId } = addEdge(cp, vids[i], vids[(i + 1) % 4]);
+    cp = p;
+    eids.push(edgeId);
   }
 
-  const faceIds = Object.keys(currentPlan.faces);
-  const newFaceId = faceIds.find((id) => !plan.faces[id]) ?? null;
-  return { plan: currentPlan, vertexIds, edgeIds, faceId: newFaceId };
+  const newFaceId = Object.keys(cp.faces).find((id) => !plan.faces[id]) ?? null;
+  return { plan: cp, vertexIds: vids, edgeIds: eids, faceId: newFaceId };
 }
 
 export function createLShape(
@@ -268,8 +336,8 @@ export function createLShape(
   },
 ): { plan: Plan; vertexIds: string[]; edgeIds: string[] } {
   const { totalWidth, totalHeight, cutoutWidth, cutoutHeight } = params;
-  const hw = totalWidth / 2;
-  const hh = totalHeight / 2;
+  const hw = totalWidth / 2,
+    hh = totalHeight / 2;
 
   const positions: Vec2[] = [
     { x: center.x - hw, y: center.y - hh },
@@ -283,25 +351,24 @@ export function createLShape(
     { x: center.x - hw, y: center.y + hh },
   ];
 
-  let currentPlan = plan;
-  const vertexIds: string[] = [];
-  const edgeIds: string[] = [];
-
+  let cp = plan;
+  const vids: string[] = [];
+  const eids: string[] = [];
   for (const pos of positions) {
-    const { plan: p, vertexId } = addVertex(currentPlan, pos);
-    currentPlan = p;
-    vertexIds.push(vertexId);
+    const { plan: p, vertexId } = addVertex(cp, pos);
+    cp = p;
+    vids.push(vertexId);
   }
   for (let i = 0; i < positions.length; i++) {
     const { plan: p, edgeId } = addEdge(
-      currentPlan,
-      vertexIds[i],
-      vertexIds[(i + 1) % positions.length],
+      cp,
+      vids[i],
+      vids[(i + 1) % positions.length],
     );
-    currentPlan = p;
-    edgeIds.push(edgeId);
+    cp = p;
+    eids.push(edgeId);
   }
-  return { plan: currentPlan, vertexIds, edgeIds };
+  return { plan: cp, vertexIds: vids, edgeIds: eids };
 }
 
 export function createUShape(
@@ -315,9 +382,9 @@ export function createUShape(
   },
 ): { plan: Plan; vertexIds: string[]; edgeIds: string[] } {
   const { totalWidth, totalHeight, cutoutWidth, cutoutHeight } = params;
-  const hw = totalWidth / 2;
-  const hh = totalHeight / 2;
-  const cw = cutoutWidth / 2;
+  const hw = totalWidth / 2,
+    hh = totalHeight / 2,
+    cw = cutoutWidth / 2;
 
   const positions: Vec2[] = [
     { x: center.x - hw, y: center.y - hh },
@@ -330,23 +397,22 @@ export function createUShape(
     { x: center.x - hw, y: center.y + hh },
   ];
 
-  let currentPlan = plan;
-  const vertexIds: string[] = [];
-  const edgeIds: string[] = [];
-
+  let cp = plan;
+  const vids: string[] = [];
+  const eids: string[] = [];
   for (const pos of positions) {
-    const { plan: p, vertexId } = addVertex(currentPlan, pos);
-    currentPlan = p;
-    vertexIds.push(vertexId);
+    const { plan: p, vertexId } = addVertex(cp, pos);
+    cp = p;
+    vids.push(vertexId);
   }
   for (let i = 0; i < positions.length; i++) {
     const { plan: p, edgeId } = addEdge(
-      currentPlan,
-      vertexIds[i],
-      vertexIds[(i + 1) % positions.length],
+      cp,
+      vids[i],
+      vids[(i + 1) % positions.length],
     );
-    currentPlan = p;
-    edgeIds.push(edgeId);
+    cp = p;
+    eids.push(edgeId);
   }
-  return { plan: currentPlan, vertexIds, edgeIds };
+  return { plan: cp, vertexIds: vids, edgeIds: eids };
 }

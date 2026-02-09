@@ -22,16 +22,15 @@ import {
   toggleInSelection,
 } from "@/features/editor/model/selection.types";
 import { findVertexNear, edgeExists } from "@/domain/plan/types";
+import { findEdgeAtPoint } from "@/domain/plan/mutations";
 
 const VERTEX_DEDUP_RADIUS = 80;
+const MERGE_RADIUS = 80; // distance at which dragged vertex merges
 
 function getStore() {
   return useEditorStore.getState();
 }
 
-/* ------------------------------------------------------------------ */
-/*  Snap helpers                                                       */
-/* ------------------------------------------------------------------ */
 function buildSnapCandidates(excludeVertexIds?: string[]) {
   const { plan } = getStore();
   const excluded = new Set(excludeVertexIds ?? []);
@@ -47,7 +46,8 @@ function buildSnapCandidates(excludeVertexIds?: string[]) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  resolveVertex — reuse or create                                    */
+/*  resolveVertex — reuse existing, split edge, or create new         */
+/*  This is the core of the integrated draw+split logic.              */
 /* ------------------------------------------------------------------ */
 function resolveVertex(
   snappedPos: Vec2,
@@ -56,21 +56,40 @@ function resolveVertex(
   const s = getStore();
   const { plan } = s;
 
+  // 1. Snap hit an existing vertex — use it
   if (snapResult.snapType === "vertex" && snapResult.snapTargetId) {
     const v = plan.vertices[snapResult.snapTargetId];
     if (v) return v.id;
   }
 
+  // 2. Safety dedup: existing vertex within merge radius
   const existing = findVertexNear(plan, snappedPos, VERTEX_DEDUP_RADIUS);
   if (existing) return existing.id;
 
+  // 3. Check if we landed on an edge — split it and return the new vertex
+  const edgeHitRadius = 100 / Math.max(s.camera.zoom, 0.1);
+  const edgeHit = findEdgeAtPoint(plan, snappedPos, edgeHitRadius);
+
+  if (edgeHit) {
+    // Split the edge at this point
+    s.executeCommand({
+      type: "SPLIT_EDGE",
+      edgeId: edgeHit.edgeId,
+      position: edgeHit.point,
+    });
+    // Find the newly created vertex
+    const newV = findVertexNear(getStore().plan, edgeHit.point, 10);
+    if (newV) return newV.id;
+  }
+
+  // 4. Create a brand new vertex
   s.executeCommand({ type: "ADD_VERTEX", position: snappedPos });
   const created = findVertexNear(getStore().plan, snappedPos, 10);
   return created?.id ?? null;
 }
 
 /* ------------------------------------------------------------------ */
-/*  DRAW MODE                                                          */
+/*  DRAW MODE — click handler                                          */
 /* ------------------------------------------------------------------ */
 function handleDrawClick(snappedPos: Vec2, snapResult: SnapResult) {
   const s = getStore();
@@ -79,6 +98,7 @@ function handleDrawClick(snappedPos: Vec2, snapResult: SnapResult) {
   const vertexId = resolveVertex(snappedPos, snapResult);
   if (!vertexId) return;
 
+  // First point
   if (drawState.vertexIds.length === 0) {
     getStore().setDrawState({ vertexIds: [vertexId] });
     return;
@@ -103,6 +123,7 @@ function handleDrawClick(snappedPos: Vec2, snapResult: SnapResult) {
 
   const faceCountAfter = Object.keys(getStore().plan.faces).length;
 
+  // Polygon closed (new face created) or hit existing chain vertex → stop drawing
   if (
     faceCountAfter > faceCountBefore ||
     drawState.vertexIds.includes(vertexId)
@@ -112,66 +133,12 @@ function handleDrawClick(snappedPos: Vec2, snapResult: SnapResult) {
     return;
   }
 
+  // Continue drawing
   getStore().setDrawState({ vertexIds: [...drawState.vertexIds, vertexId] });
 }
 
 /* ------------------------------------------------------------------ */
-/*  SPLIT MODE                                                         */
-/* ------------------------------------------------------------------ */
-function handleSplitClick(pos: Vec2) {
-  const s = getStore();
-  const { plan } = s;
-  const hitRadius = 200 / Math.max(s.camera.zoom, 0.1);
-
-  let bestEdgeId: string | null = null;
-  let bestDist = Infinity;
-  let bestPoint: Vec2 | null = null;
-
-  for (const edge of Object.values(plan.edges)) {
-    const start = plan.vertices[edge.startId];
-    const end = plan.vertices[edge.endId];
-    if (!start || !end) continue;
-    const { point, t } = closestPointOnSegment(
-      pos,
-      start.position,
-      end.position,
-    );
-    const d = distance(pos, point);
-    if (d < hitRadius && t > 0.05 && t < 0.95 && d < bestDist) {
-      bestDist = d;
-      bestEdgeId = edge.id;
-      bestPoint = point;
-    }
-  }
-
-  if (!bestEdgeId || !bestPoint) return;
-  const edge = plan.edges[bestEdgeId];
-  if (!edge) return;
-
-  if (findVertexNear(plan, bestPoint, VERTEX_DEDUP_RADIUS)) return;
-
-  s.executeCommand({
-    type: "BATCH",
-    label: "Split Edge",
-    commands: [{ type: "ADD_VERTEX", position: bestPoint }],
-  });
-
-  const newVertex = findVertexNear(getStore().plan, bestPoint, 10);
-  if (!newVertex) return;
-
-  getStore().executeCommand({
-    type: "BATCH",
-    label: "Reconnect Split",
-    commands: [
-      { type: "REMOVE_EDGE", edgeId: bestEdgeId },
-      { type: "ADD_EDGE", startId: edge.startId, endId: newVertex.id },
-      { type: "ADD_EDGE", startId: newVertex.id, endId: edge.endId },
-    ],
-  });
-}
-
-/* ------------------------------------------------------------------ */
-/*  Build drag state for a given hit                                   */
+/*  Build drag state                                                   */
 /* ------------------------------------------------------------------ */
 function buildDragState(
   hitType: "vertex" | "edge" | "face",
@@ -181,11 +148,9 @@ function buildDragState(
   const { plan } = getStore();
 
   let vertexIds: string[] = [];
-  let entityId = hitId;
 
   if (hitType === "vertex") {
-    const v = plan.vertices[hitId];
-    if (!v) return null;
+    if (!plan.vertices[hitId]) return null;
     vertexIds = [hitId];
   } else if (hitType === "edge") {
     const edge = plan.edges[hitId];
@@ -197,17 +162,14 @@ function buildDragState(
     vertexIds = [...face.vertexIds];
   }
 
-  // Deduplicate
   vertexIds = [...new Set(vertexIds)];
 
-  // Build start positions
   const startPositions: Record<string, Vec2> = {};
   for (const vid of vertexIds) {
     const v = plan.vertices[vid];
     if (v) startPositions[vid] = { x: v.position.x, y: v.position.y };
   }
 
-  // Find anchor: closest vertex to click point
   let anchorVertexId = vertexIds[0];
   let anchorDist = Infinity;
   for (const vid of vertexIds) {
@@ -220,11 +182,11 @@ function buildDragState(
 
   return {
     type: hitType,
-    entityId,
+    entityId: hitId,
     vertexIds,
     startPositions,
     anchorVertexId,
-    dragOrigin: { x: clickPos.x, y: clickPos.y },
+    dragOrigin: { ...clickPos },
   };
 }
 
@@ -252,9 +214,7 @@ export function CanvasInteraction() {
     [camera, gl, size],
   );
 
-  /* =================================================================
-     POINTER DOWN
-     ================================================================= */
+  /* ===== POINTER DOWN ===== */
   const handlePointerDown = useCallback(
     (e: PointerEvent) => {
       if (e.button !== 0) return;
@@ -285,12 +245,8 @@ export function CanvasInteraction() {
         handleDrawClick(pos, snapResult);
         return;
       }
-      if (mode === "split") {
-        handleSplitClick(pos);
-        return;
-      }
 
-      /* ---------- SELECT ---------- */
+      /* SELECT */
       const hitRadius = 150 / Math.max(s.camera.zoom, 0.1);
       const edgeHitRadius = 100 / Math.max(s.camera.zoom, 0.1);
       const hit = pickAtPosition(pos, plan, hitRadius, edgeHitRadius);
@@ -302,7 +258,6 @@ export function CanvasInteraction() {
           s.setSelection(singleSelection(hit.type, hit.id));
         }
 
-        // Start drag for vertex, edge, or face
         const drag = buildDragState(hit.type, hit.id, pos);
         if (drag) {
           isDragging.current = true;
@@ -316,16 +271,14 @@ export function CanvasInteraction() {
     [getPlanPos],
   );
 
-  /* =================================================================
-     POINTER MOVE
-     ================================================================= */
+  /* ===== POINTER MOVE ===== */
   const handlePointerMove = useCallback(
     (e: PointerEvent) => {
       const s = getStore();
       const { mode, plan, snapConfig, drawState } = s;
       const rawPos = getPlanPos(e.clientX, e.clientY);
 
-      /* ---------- DRAW preview ---------- */
+      /* DRAW preview */
       if (mode === "draw" && drawState.vertexIds.length > 0) {
         const lastId = drawState.vertexIds[drawState.vertexIds.length - 1];
         const anchorV = plan.vertices[lastId]?.position;
@@ -352,9 +305,8 @@ export function CanvasInteraction() {
               snapResult.position,
               VERTEX_DEDUP_RADIUS,
             );
-            if (nearV && drawState.vertexIds.slice(0, -1).includes(nearV.id)) {
+            if (nearV && drawState.vertexIds.slice(0, -1).includes(nearV.id))
               isClosing = true;
-            }
           }
         }
 
@@ -363,24 +315,21 @@ export function CanvasInteraction() {
         return;
       }
 
-      /* ---------- DRAG ---------- */
+      /* DRAG */
       if (isDragging.current && activeDrag.current) {
         hasMoved.current = true;
         const drag = activeDrag.current;
 
-        // Exclude all dragged vertices from snap candidates
         const { vertices: snapV, edges: snapE } = buildSnapCandidates(
           drag.vertexIds,
         );
 
-        // Compute where the anchor vertex would go
         const rawOffset = sub(rawPos, drag.dragOrigin);
         const anchorTarget: Vec2 = add(
           drag.startPositions[drag.anchorVertexId],
           rawOffset,
         );
 
-        // Snap the anchor vertex target
         const snapResult = computeSnap(
           anchorTarget,
           snapConfig,
@@ -391,13 +340,11 @@ export function CanvasInteraction() {
         );
         s.setGuideLines(snapResult.guideLines ?? []);
 
-        // Compute final offset from snapped anchor
         const finalOffset = sub(
           snapResult.position,
           drag.startPositions[drag.anchorVertexId],
         );
 
-        // Apply offset to all dragged vertices
         const updatedVertices = { ...plan.vertices };
         for (const vid of drag.vertexIds) {
           const startP = drag.startPositions[vid];
@@ -412,38 +359,18 @@ export function CanvasInteraction() {
         return;
       }
 
-      /* ---------- HOVER ---------- */
+      /* HOVER */
       if (mode === "select") {
         const hitRadius = 150 / Math.max(s.camera.zoom, 0.1);
         const edgeHitRadius = 100 / Math.max(s.camera.zoom, 0.1);
         const hit = pickAtPosition(rawPos, plan, hitRadius, edgeHitRadius);
         s.setHoveredItem(hit ? { type: hit.type, id: hit.id } : null);
       }
-
-      if (mode === "split") {
-        const hitRadius = 200 / Math.max(s.camera.zoom, 0.1);
-        let found = false;
-        for (const edge of Object.values(plan.edges)) {
-          const start = plan.vertices[edge.startId];
-          const end = plan.vertices[edge.endId];
-          if (!start || !end) continue;
-          if (
-            distanceToSegment(rawPos, start.position, end.position) < hitRadius
-          ) {
-            s.setHoveredItem({ type: "edge", id: edge.id });
-            found = true;
-            break;
-          }
-        }
-        if (!found) s.setHoveredItem(null);
-      }
     },
     [getPlanPos],
   );
 
-  /* =================================================================
-     POINTER UP
-     ================================================================= */
+  /* ===== POINTER UP ===== */
   const handlePointerUp = useCallback(() => {
     if (!isDragging.current || !activeDrag.current) {
       isDragging.current = false;
@@ -462,7 +389,7 @@ export function CanvasInteraction() {
         if (v) finalPositions[vid] = { ...v.position };
       }
 
-      // Restore originals
+      // Restore originals for history
       const restored = { ...s.plan.vertices };
       for (const vid of drag.vertexIds) {
         if (drag.startPositions[vid] && restored[vid]) {
@@ -474,7 +401,48 @@ export function CanvasInteraction() {
       }
       s.updatePlanDirect({ ...s.plan, vertices: restored });
 
-      // Build batch command
+      // Check for vertex merging (only for single vertex drag)
+      if (drag.type === "vertex" && drag.vertexIds.length === 1) {
+        const draggedVid = drag.vertexIds[0];
+        const finalPos = finalPositions[draggedVid];
+
+        if (finalPos) {
+          // Look for a nearby vertex to merge with
+          // We need to search after restoring original positions
+          const nearbyVertex = findVertexNear(s.plan, finalPos, MERGE_RADIUS);
+
+          if (nearbyVertex && nearbyVertex.id !== draggedVid) {
+            // Move first, then merge
+            s.executeCommand({
+              type: "BATCH",
+              label: "Move and Merge Vertices",
+              commands: [
+                {
+                  type: "MOVE_VERTEX",
+                  vertexId: draggedVid,
+                  from: drag.startPositions[draggedVid],
+                  to: finalPos,
+                },
+                {
+                  type: "MERGE_VERTICES",
+                  keepId: nearbyVertex.id,
+                  removeId: draggedVid,
+                },
+              ],
+            });
+
+            s.setDragState(null);
+            s.setGuideLines([]);
+            s.clearSelection();
+            isDragging.current = false;
+            activeDrag.current = null;
+            hasMoved.current = false;
+            return;
+          }
+        }
+      }
+
+      // Normal move (no merge)
       const moveCommands = drag.vertexIds
         .filter((vid) => {
           const sp = drag.startPositions[vid];

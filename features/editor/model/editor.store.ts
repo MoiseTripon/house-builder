@@ -8,7 +8,7 @@ import { SnapConfig, DEFAULT_SNAP_CONFIG } from "@/domain/geometry/snap";
 import { UnitConfig } from "@/domain/units/units";
 import { Vec2 } from "@/domain/geometry/vec2";
 
-export type EditorMode = "select" | "draw" | "split";
+export type EditorMode = "select" | "draw";
 export type AdvancedMode = "simple" | "advanced";
 
 export interface DrawState {

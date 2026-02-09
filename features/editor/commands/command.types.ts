@@ -31,6 +31,7 @@ export type Command =
       cutoutHeight: number;
     }
   | { type: "MERGE_VERTICES"; keepId: string; removeId: string }
+  | { type: "SPLIT_EDGE"; edgeId: string; position: Vec2 }
   | {
       type: "SCALE_FACE";
       faceId: string;

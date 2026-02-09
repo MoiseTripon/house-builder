@@ -15,7 +15,6 @@ export function ModeSwitch() {
       options={[
         { value: "select", label: "Select (V)" },
         { value: "draw", label: "Draw (D)" },
-        { value: "split", label: "Split (S)" },
       ]}
     />
   );

@@ -23,11 +23,10 @@ export function useEditorShortcuts() {
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement
-      ) {
+      )
         return;
-      }
 
-      // Undo / Redo
+      // Undo/Redo
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -45,9 +44,7 @@ export function useEditorShortcuts() {
         if (mode === "draw") {
           resetDrawState();
           setMode("select");
-        } else {
-          clearSelection();
-        }
+        } else clearSelection();
         return;
       }
 
@@ -60,36 +57,27 @@ export function useEditorShortcuts() {
         const edgeIds = getSelectedIds(selection, "edge");
 
         const cmds: any[] = [];
-
-        // Delete faces first (removes their exclusive edges/vertices)
-        for (const fid of faceIds) {
+        for (const fid of faceIds)
           cmds.push({ type: "DELETE_FACE", faceId: fid });
-        }
-        // Then edges
-        for (const eid of edgeIds) {
+        for (const eid of edgeIds)
           cmds.push({ type: "REMOVE_EDGE", edgeId: eid });
-        }
-        // Then vertices
-        for (const vid of vertexIds) {
+        for (const vid of vertexIds)
           cmds.push({ type: "REMOVE_VERTEX", vertexId: vid });
-        }
 
-        if (cmds.length > 0) {
+        if (cmds.length > 0)
           executeCommand({
             type: "BATCH",
             label: "Delete selection",
             commands: cmds,
           });
-        }
         clearSelection();
         return;
       }
 
-      // Scale face:  [  shrink 10%   ]  grow 10%
+      // Scale face: [ shrink ] grow
       if (e.key === "[" || e.key === "]") {
         const faceIds = getSelectedIds(selection, "face");
         if (faceIds.length !== 1) return;
-
         const face = plan.faces[faceIds[0]];
         if (!face) return;
 
@@ -119,11 +107,6 @@ export function useEditorShortcuts() {
       }
       if (e.key === "d" || e.key === "D") {
         setMode("draw");
-        return;
-      }
-      if (e.key === "s" && !e.ctrlKey && !e.metaKey) {
-        if (mode === "draw") resetDrawState();
-        setMode("split");
         return;
       }
     },

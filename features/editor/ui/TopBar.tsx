@@ -30,9 +30,8 @@ export function TopBar() {
 
   return (
     <div className="flex flex-col border-b border-border bg-background">
-      {/* Main row */}
       <div className="flex items-center justify-between px-4 py-2">
-        {/* Left: Mode switch + Undo/Redo */}
+        {/* Left: Mode switch (Select + Draw only) + Undo/Redo */}
         <div className="flex items-center gap-3">
           <Segmented
             value={mode}
@@ -48,16 +47,9 @@ export function TopBar() {
                 label: "Draw",
                 icon: <span className="text-[10px] opacity-50">D</span>,
               },
-              {
-                value: "split" as const,
-                label: "Split",
-                icon: <span className="text-[10px] opacity-50">S</span>,
-              },
             ]}
           />
-
           <div className="w-px h-6 bg-border" />
-
           <div className="flex items-center gap-1">
             <button
               onClick={undo}
@@ -84,7 +76,7 @@ export function TopBar() {
           </div>
         </div>
 
-        {/* Center: snap options */}
+        {/* Center: snap */}
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
             <input
@@ -147,8 +139,8 @@ export function TopBar() {
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
               {verticesPlaced === 0
-                ? "Click on the canvas or an existing point to start drawing"
-                : `Drawing — ${verticesPlaced} point${verticesPlaced !== 1 ? "s" : ""} placed. Click to add edges. Close the shape or press Esc to cancel.`}
+                ? "Click to start drawing. Click on edges to split them."
+                : `${verticesPlaced} point${verticesPlaced !== 1 ? "s" : ""} — click to extend. Land on existing geometry to split faces.`}
             </span>
           </div>
           <button
