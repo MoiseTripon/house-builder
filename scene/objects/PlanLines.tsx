@@ -1,10 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
-import {
-  useEditorStore,
-  DragState,
-} from "@/features/editor/model/editor.store";
+import { useEditorStore } from "@/features/editor/model/editor.store";
 import { isSelected } from "@/features/editor/model/selection.types";
 import * as THREE from "three";
 
@@ -17,7 +14,18 @@ export function PlanLines() {
   const dragState = useEditorStore((s) => s.dragState);
 
   /* ----------------------------------------------------------------
-     Is a vertex part of the current drag set?
+     Which edges belong to at least one face?
+     ---------------------------------------------------------------- */
+  const edgesInFaces = useMemo(() => {
+    const set = new Set<string>();
+    for (const face of Object.values(plan.faces)) {
+      for (const eid of face.edgeIds) set.add(eid);
+    }
+    return set;
+  }, [plan.faces]);
+
+  /* ----------------------------------------------------------------
+     Dragged vertex set
      ---------------------------------------------------------------- */
   const draggedVertexSet = useMemo(() => {
     if (!dragState) return new Set<string>();
@@ -66,7 +74,7 @@ export function PlanLines() {
   }, [plan.faces, plan.vertices, selection, hoveredItem, dragState]);
 
   /* ----------------------------------------------------------------
-     EDGE line segments
+     EDGES — separate orphan (not in any face) from normal
      ---------------------------------------------------------------- */
   const edgeElements = useMemo(() => {
     return Object.values(plan.edges).map((edge) => {
@@ -79,9 +87,18 @@ export function PlanLines() {
       const isSel = isSelected(selection, "edge", edge.id);
       const isDragged =
         dragState?.type === "edge" && dragState.entityId === edge.id;
+      const isOrphan = !edgesInFaces.has(edge.id);
 
-      const color =
-        isSel || isDragged ? "#60a5fa" : isHovered ? "#93c5fd" : "#64748b";
+      let color: string;
+      if (isSel || isDragged) {
+        color = "#60a5fa";
+      } else if (isHovered) {
+        color = "#93c5fd";
+      } else if (isOrphan) {
+        color = "#f97316"; // orange for edges not in any face
+      } else {
+        color = "#64748b";
+      }
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute(
@@ -108,7 +125,14 @@ export function PlanLines() {
         </lineSegments>
       );
     });
-  }, [plan.edges, plan.vertices, selection, hoveredItem, dragState]);
+  }, [
+    plan.edges,
+    plan.vertices,
+    selection,
+    hoveredItem,
+    dragState,
+    edgesInFaces,
+  ]);
 
   /* ----------------------------------------------------------------
      VERTEX circles
@@ -158,37 +182,40 @@ export function PlanLines() {
      ---------------------------------------------------------------- */
   const drawPreviewGeo = useMemo(() => {
     if (mode !== "draw") return null;
-    if (drawState.vertexIds.length === 0) return null;
-    if (!drawState.previewPosition) return null;
+    if (drawState.vertexIds.length === 0 || !drawState.previewPosition)
+      return null;
 
     const lastId = drawState.vertexIds[drawState.vertexIds.length - 1];
     const lastV = plan.vertices[lastId];
     if (!lastV) return null;
 
-    const pts: number[] = [
-      lastV.position.x,
-      lastV.position.y,
-      0.2,
-      drawState.previewPosition.x,
-      drawState.previewPosition.y,
-      0.2,
-    ];
-
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    geo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        [
+          lastV.position.x,
+          lastV.position.y,
+          0.2,
+          drawState.previewPosition.x,
+          drawState.previewPosition.y,
+          0.2,
+        ],
+        3,
+      ),
+    );
     return geo;
   }, [mode, drawState, plan.vertices]);
 
-  const closingTarget = useMemo(() => {
-    if (mode !== "draw" || !drawState.isClosing || !drawState.previewPosition)
-      return null;
-    return drawState.previewPosition;
-  }, [mode, drawState]);
+  const closingTarget =
+    mode === "draw" && drawState.isClosing && drawState.previewPosition
+      ? drawState.previewPosition
+      : null;
 
-  const cursorDot = useMemo(() => {
-    if (mode !== "draw" || !drawState.previewPosition) return null;
-    return drawState.previewPosition;
-  }, [mode, drawState.previewPosition]);
+  const cursorDot =
+    mode === "draw" && drawState.previewPosition
+      ? drawState.previewPosition
+      : null;
 
   return (
     <group>
@@ -199,7 +226,6 @@ export function PlanLines() {
         <lineSegments geometry={drawPreviewGeo}>
           <lineBasicMaterial
             color={drawState.isClosing ? "#22c55e" : "#f59e0b"}
-            linewidth={1}
             opacity={0.8}
             transparent
           />

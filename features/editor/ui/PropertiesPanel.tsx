@@ -12,11 +12,19 @@ import {
   polygonPerimeter,
   polygonInteriorAngles,
   interiorAngleAt,
-  polygonSignedArea,
 } from "@/domain/geometry/polygon";
 
 function radToDeg(r: number) {
   return (r * 180) / Math.PI;
+}
+
+function Row({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-muted-foreground">{label}:</span>
+      <span>{value}</span>
+    </div>
+  );
 }
 
 export function PropertiesPanel() {
@@ -33,25 +41,23 @@ export function PropertiesPanel() {
   const hasSelection = selection.items.length > 0;
 
   /* ================================================================
-     NO SELECTION — show plan overview
+     NO SELECTION
      ================================================================ */
   if (!hasSelection) {
     return (
-      <div className="p-4">
+      <div className="p-4 space-y-3">
         <Panel title="Properties">
           <p className="text-xs text-muted-foreground">
             Select a vertex, edge, or face to see its properties.
           </p>
         </Panel>
-        <div className="mt-3">
-          <Panel title="Plan Info">
-            <div className="space-y-1 text-xs">
-              <Row label="Vertices" value={Object.keys(plan.vertices).length} />
-              <Row label="Edges" value={Object.keys(plan.edges).length} />
-              <Row label="Faces" value={Object.keys(plan.faces).length} />
-            </div>
-          </Panel>
-        </div>
+        <Panel title="Plan Info">
+          <div className="space-y-1 text-xs">
+            <Row label="Vertices" value={Object.keys(plan.vertices).length} />
+            <Row label="Edges" value={Object.keys(plan.edges).length} />
+            <Row label="Faces" value={Object.keys(plan.faces).length} />
+          </div>
+        </Panel>
       </div>
     );
   }
@@ -59,14 +65,13 @@ export function PropertiesPanel() {
   return (
     <div className="p-4 space-y-3">
       {/* ==============================================================
-          VERTEX SELECTED
+          SINGLE VERTEX
           ============================================================== */}
       {selectedVertexIds.length === 1 &&
         (() => {
           const vertex = plan.vertices[selectedVertexIds[0]];
           if (!vertex) return null;
 
-          // Find all faces containing this vertex and the angle at each
           const containingFaces = Object.values(plan.faces).filter((f) =>
             f.vertexIds.includes(vertex.id),
           );
@@ -79,8 +84,10 @@ export function PropertiesPanel() {
               if (positions.length < 3) return null;
               const idx = face.vertexIds.indexOf(vertex.id);
               if (idx === -1) return null;
-              const angleDeg = radToDeg(interiorAngleAt(positions, idx));
-              return { faceId: face.id, angleDeg };
+              return {
+                faceId: face.id,
+                angleDeg: radToDeg(interiorAngleAt(positions, idx)),
+              };
             })
             .filter(Boolean) as { faceId: string; angleDeg: number }[];
 
@@ -130,7 +137,7 @@ export function PropertiesPanel() {
               </Panel>
 
               {faceAngles.length > 0 && (
-                <Panel title="Angles at Vertex" collapsible>
+                <Panel title="Interior Angles at Vertex">
                   <div className="space-y-1.5">
                     {faceAngles.map((fa, i) => (
                       <div
@@ -166,7 +173,7 @@ export function PropertiesPanel() {
         })()}
 
       {/* ==============================================================
-          EDGE SELECTED
+          SINGLE EDGE
           ============================================================== */}
       {selectedEdgeIds.length === 1 &&
         (() => {
@@ -197,8 +204,7 @@ export function PropertiesPanel() {
                   }
                 />
                 <div className="text-[10px] text-muted-foreground">
-                  Tip: drag the edge to translate it, or drag a vertex to
-                  reshape.
+                  Drag the edge to translate it.
                 </div>
                 <button
                   onClick={() => {
@@ -215,7 +221,7 @@ export function PropertiesPanel() {
         })()}
 
       {/* ==============================================================
-          FACE SELECTED
+          SINGLE FACE
           ============================================================== */}
       {selectedFaceIds.length === 1 &&
         (() => {
@@ -231,6 +237,7 @@ export function PropertiesPanel() {
           const perim = polygonPerimeter(positions);
           const angles = polygonInteriorAngles(positions);
           const angleSum = angles.reduce((s, a) => s + a, 0);
+          const expectedSum = (positions.length - 2) * Math.PI;
 
           return (
             <>
@@ -247,34 +254,33 @@ export function PropertiesPanel() {
                     value={formatLength(perim, unitConfig)}
                   />
                   <div className="text-[10px] text-muted-foreground pt-1">
-                    Tip: drag inside the face to move the entire shape.
+                    Drag inside the face to move the entire shape.
                   </div>
                 </div>
               </Panel>
 
-              <Panel title="Interior Angles" collapsible>
+              <Panel title="Interior Angles">
                 <div className="space-y-1.5">
                   {angles.map((angleRad, i) => {
                     const angleDeg = radToDeg(angleRad);
-                    const vid = face.vertexIds[i];
                     const isRight = Math.abs(angleDeg - 90) < 0.5;
-                    const is180 = Math.abs(angleDeg - 180) < 0.5;
+                    const isStraight = Math.abs(angleDeg - 180) < 0.5;
+                    const isReflex = angleDeg > 180.5;
+
+                    let dotColor = "#f59e0b"; // amber
+                    if (isRight) dotColor = "#22c55e"; // green
+                    if (isStraight) dotColor = "#ef4444"; // red
+                    if (isReflex) dotColor = "#ef4444"; // red
 
                     return (
                       <div
-                        key={vid}
+                        key={face.vertexIds[i]}
                         className="flex items-center justify-between text-xs border border-border rounded px-2 py-1"
                       >
                         <span className="text-muted-foreground flex items-center gap-1.5">
                           <span
-                            className="w-2 h-2 rounded-full"
-                            style={{
-                              backgroundColor: isRight
-                                ? "#22c55e"
-                                : is180
-                                  ? "#ef4444"
-                                  : "#f59e0b",
-                            }}
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: dotColor }}
                           />
                           V{i + 1}
                         </span>
@@ -293,8 +299,8 @@ export function PropertiesPanel() {
                     </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    Expected: {((positions.length - 2) * 180).toFixed(0)}° for a
-                    simple polygon
+                    Expected for {positions.length}-gon:{" "}
+                    {radToDeg(expectedSum).toFixed(0)}°
                   </div>
                 </div>
               </Panel>
@@ -327,16 +333,6 @@ export function PropertiesPanel() {
           </div>
         </Panel>
       )}
-    </div>
-  );
-}
-
-/* ---------- tiny helper ---------- */
-function Row({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-muted-foreground">{label}:</span>
-      <span>{value}</span>
     </div>
   );
 }

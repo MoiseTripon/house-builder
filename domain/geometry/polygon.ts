@@ -99,7 +99,13 @@ export function isConvex(vertices: Vec2[]): boolean {
 }
 
 /**
- * Compute interior angle at one vertex of a polygon.
+ * Interior angle at vertex `index` of a polygon.
+ *
+ * Uses vectors a = prev−curr and b = next−curr.
+ *
+ *  CCW polygon  ⇒  cross(a,b) < 0  at convex vertex  (interior < π)
+ *  CW  polygon  ⇒  cross(a,b) > 0  at convex vertex  (interior < π)
+ *
  * Returns radians in (0, 2π).
  */
 export function interiorAngleAt(vertices: Vec2[], index: number): number {
@@ -118,20 +124,21 @@ export function interiorAngleAt(vertices: Vec2[], index: number): number {
   if (lenA < 1e-10 || lenB < 1e-10) return 0;
 
   const cosAngle = dot(a, b) / (lenA * lenB);
-  const baseAngle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+  const clamped = Math.max(-1, Math.min(1, cosAngle));
+  const baseAngle = Math.acos(clamped);
+
   const crossVal = cross(a, b);
 
-  // Determine polygon winding
+  // Degenerate — treat as straight (π)
+  if (Math.abs(crossVal) < 1e-10) return baseAngle;
+
   const isCCW = polygonSignedArea(vertices) > 0;
 
-  // For CCW: cross > 0 at vertex ⇒ convex (interior < π)
-  // For CW:  cross < 0 at vertex ⇒ convex (interior < π)
-  const isConvexVertex = isCCW ? crossVal > 0 : crossVal < 0;
+  // For CCW: cross(a,b) < 0 → convex vertex (interior < π)
+  // For CW : cross(a,b) > 0 → convex vertex (interior < π)
+  const isConvexVertex = isCCW ? crossVal < 0 : crossVal > 0;
 
-  if (isConvexVertex || Math.abs(crossVal) < 1e-10) {
-    return baseAngle;
-  }
-  return 2 * Math.PI - baseAngle;
+  return isConvexVertex ? baseAngle : 2 * Math.PI - baseAngle;
 }
 
 /**
@@ -142,17 +149,22 @@ export function polygonInteriorAngles(vertices: Vec2[]): number[] {
 }
 
 /**
- * Build arc points for visualising the interior angle at a vertex.
- * Returns an array of positions along the arc.
+ * Build an arc as line-segment pairs suitable for `<lineSegments>`.
+ *
+ * For a CCW polygon the interior arc sweeps CW (negative).
+ * For a CW  polygon the interior arc sweeps CCW (positive).
+ *
+ * Returns flat [x,y,z, x,y,z, …] with pairs of points.
  */
-export function interiorArcPoints(
+export function interiorArcSegments(
   center: Vec2,
   prevPos: Vec2,
   nextPos: Vec2,
   isCCW: boolean,
   radius: number,
-  segments: number = 24,
-): Vec2[] {
+  z: number = 0.6,
+  segments: number = 32,
+): number[] {
   const v1 = sub(prevPos, center);
   const v2 = sub(nextPos, center);
 
@@ -160,8 +172,8 @@ export function interiorArcPoints(
   const len2 = vecLength(v2);
   if (len1 < 1e-10 || len2 < 1e-10) return [];
 
-  const startAngle = Math.atan2(v1.y / len1, v1.x / len1);
-  const endAngle = Math.atan2(v2.y / len2, v2.x / len2);
+  const startAngle = Math.atan2(v1.y, v1.x);
+  const endAngle = Math.atan2(v2.y, v2.x);
 
   let sweep = endAngle - startAngle;
 
@@ -175,14 +187,59 @@ export function interiorArcPoints(
     if (Math.abs(sweep) < 1e-10) sweep = 2 * Math.PI;
   }
 
-  const points: Vec2[] = [];
-  for (let i = 0; i <= segments; i++) {
+  // Build consecutive pairs for lineSegments
+  const pts: number[] = [];
+  let px = center.x + Math.cos(startAngle) * radius;
+  let py = center.y + Math.sin(startAngle) * radius;
+
+  for (let i = 1; i <= segments; i++) {
     const t = i / segments;
     const a = startAngle + sweep * t;
-    points.push({
-      x: center.x + Math.cos(a) * radius,
-      y: center.y + Math.sin(a) * radius,
-    });
+    const nx = center.x + Math.cos(a) * radius;
+    const ny = center.y + Math.sin(a) * radius;
+    pts.push(px, py, z, nx, ny, z);
+    px = nx;
+    py = ny;
   }
-  return points;
+
+  return pts;
+}
+
+/**
+ * Position for the angle label, pushed inward from the vertex.
+ */
+export function angleLabelPosition(
+  center: Vec2,
+  prevPos: Vec2,
+  nextPos: Vec2,
+  isCCW: boolean,
+  offset: number,
+): Vec2 {
+  const v1 = sub(prevPos, center);
+  const v2 = sub(nextPos, center);
+
+  const len1 = vecLength(v1);
+  const len2 = vecLength(v2);
+  if (len1 < 1e-10 || len2 < 1e-10) return center;
+
+  const startAngle = Math.atan2(v1.y, v1.x);
+  const endAngle = Math.atan2(v2.y, v2.x);
+
+  let sweep = endAngle - startAngle;
+
+  if (isCCW) {
+    if (sweep > 0) sweep -= 2 * Math.PI;
+    if (Math.abs(sweep) < 1e-10) sweep = -2 * Math.PI;
+  } else {
+    if (sweep < 0) sweep += 2 * Math.PI;
+    if (Math.abs(sweep) < 1e-10) sweep = 2 * Math.PI;
+  }
+
+  // Midpoint of sweep
+  const midAngle = startAngle + sweep / 2;
+
+  return {
+    x: center.x + Math.cos(midAngle) * offset,
+    y: center.y + Math.sin(midAngle) * offset,
+  };
 }
