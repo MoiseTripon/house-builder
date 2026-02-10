@@ -10,6 +10,7 @@ import { Vec2 } from "@/domain/geometry/vec2";
 
 export type EditorMode = "select" | "draw";
 export type AdvancedMode = "simple" | "advanced";
+export type CameraView = "top" | "perspective" | "front" | "side";
 
 export interface DrawState {
   vertexIds: string[];
@@ -31,6 +32,17 @@ interface HistoryEntry {
   command: Command;
 }
 
+export interface CameraState {
+  x: number;
+  y: number;
+  z: number;
+  zoom: number;
+  view: CameraView;
+  // For perspective view
+  polarAngle: number; // vertical angle (0 = top, PI/2 = horizon)
+  azimuthAngle: number; // horizontal rotation
+}
+
 interface EditorState {
   plan: Plan;
   mode: EditorMode;
@@ -42,7 +54,7 @@ interface EditorState {
   unitConfig: UnitConfig;
   undoStack: HistoryEntry[];
   redoStack: HistoryEntry[];
-  camera: { x: number; y: number; zoom: number };
+  camera: CameraState;
   hoveredItem: { type: SelectionType; id: string } | null;
   guideLines: { from: Vec2; to: Vec2 }[];
 
@@ -51,25 +63,19 @@ interface EditorState {
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
-
   setMode: (mode: EditorMode) => void;
   setAdvancedMode: (mode: AdvancedMode) => void;
-
   setSelection: (selection: Selection) => void;
   clearSelection: () => void;
-
   setDrawState: (state: Partial<DrawState>) => void;
   resetDrawState: () => void;
-
   setDragState: (state: DragState | null) => void;
-
   setSnapConfig: (config: Partial<SnapConfig>) => void;
   setUnitConfig: (config: Partial<UnitConfig>) => void;
-
-  setCamera: (camera: Partial<EditorState["camera"]>) => void;
+  setCamera: (camera: Partial<CameraState>) => void;
+  setCameraView: (view: CameraView) => void;
   setHoveredItem: (item: EditorState["hoveredItem"]) => void;
   setGuideLines: (lines: EditorState["guideLines"]) => void;
-
   updatePlanDirect: (plan: Plan) => void;
 }
 
@@ -79,7 +85,25 @@ const INITIAL_DRAW_STATE: DrawState = {
   isClosing: false,
 };
 
+const INITIAL_CAMERA: CameraState = {
+  x: 0,
+  y: 0,
+  z: 100,
+  zoom: 1,
+  view: "top",
+  polarAngle: 0, // Looking straight down
+  azimuthAngle: 0,
+};
+
 const MAX_HISTORY = 100;
+
+// Predefined camera positions for different views
+const CAMERA_PRESETS: Record<CameraView, Partial<CameraState>> = {
+  top: { polarAngle: 0, azimuthAngle: 0 },
+  perspective: { polarAngle: Math.PI / 4, azimuthAngle: Math.PI / 4 },
+  front: { polarAngle: Math.PI / 2, azimuthAngle: 0 },
+  side: { polarAngle: Math.PI / 2, azimuthAngle: Math.PI / 2 },
+};
 
 export const useEditorStore = create<EditorState>()(
   subscribeWithSelector((set, get) => ({
@@ -93,37 +117,38 @@ export const useEditorStore = create<EditorState>()(
     unitConfig: { system: "metric", precision: 1 },
     undoStack: [],
     redoStack: [],
-    camera: { x: 0, y: 0, zoom: 1 },
+    camera: INITIAL_CAMERA,
     hoveredItem: null,
     guideLines: [],
 
-    executeCommand: (command: Command) => {
+    executeCommand: (command) => {
       const { plan, undoStack } = get();
       const newPlan = applyCommand(plan, command);
-      const newEntry: HistoryEntry = { plan, command };
-      const newUndoStack = [...undoStack, newEntry].slice(-MAX_HISTORY);
-      set({ plan: newPlan, undoStack: newUndoStack, redoStack: [] });
+      set({
+        plan: newPlan,
+        undoStack: [...undoStack, { plan, command }].slice(-MAX_HISTORY),
+        redoStack: [],
+      });
     },
 
     undo: () => {
       const { undoStack, plan, redoStack } = get();
       if (undoStack.length === 0) return;
-      const lastEntry = undoStack[undoStack.length - 1];
+      const last = undoStack[undoStack.length - 1];
       set({
-        plan: lastEntry.plan,
+        plan: last.plan,
         undoStack: undoStack.slice(0, -1),
-        redoStack: [...redoStack, { plan, command: lastEntry.command }],
+        redoStack: [...redoStack, { plan, command: last.command }],
       });
     },
 
     redo: () => {
       const { redoStack, plan, undoStack } = get();
       if (redoStack.length === 0) return;
-      const lastEntry = redoStack[redoStack.length - 1];
-      const restoredPlan = applyCommand(plan, lastEntry.command);
+      const last = redoStack[redoStack.length - 1];
       set({
-        plan: restoredPlan,
-        undoStack: [...undoStack, { plan, command: lastEntry.command }],
+        plan: applyCommand(plan, last.command),
+        undoStack: [...undoStack, { plan, command: last.command }],
         redoStack: redoStack.slice(0, -1),
       });
     },
@@ -134,26 +159,24 @@ export const useEditorStore = create<EditorState>()(
     setMode: (mode) =>
       set({ mode, drawState: INITIAL_DRAW_STATE, dragState: null }),
     setAdvancedMode: (advancedMode) => set({ advancedMode }),
-
     setSelection: (selection) => set({ selection }),
     clearSelection: () => set({ selection: emptySelection() }),
-
     setDrawState: (partial) =>
-      set((state) => ({ drawState: { ...state.drawState, ...partial } })),
+      set((s) => ({ drawState: { ...s.drawState, ...partial } })),
     resetDrawState: () => set({ drawState: INITIAL_DRAW_STATE }),
-
     setDragState: (dragState) => set({ dragState }),
-
     setSnapConfig: (partial) =>
-      set((state) => ({ snapConfig: { ...state.snapConfig, ...partial } })),
+      set((s) => ({ snapConfig: { ...s.snapConfig, ...partial } })),
     setUnitConfig: (partial) =>
-      set((state) => ({ unitConfig: { ...state.unitConfig, ...partial } })),
-
+      set((s) => ({ unitConfig: { ...s.unitConfig, ...partial } })),
     setCamera: (partial) =>
-      set((state) => ({ camera: { ...state.camera, ...partial } })),
+      set((s) => ({ camera: { ...s.camera, ...partial } })),
+    setCameraView: (view) => {
+      const preset = CAMERA_PRESETS[view];
+      set((s) => ({ camera: { ...s.camera, view, ...preset } }));
+    },
     setHoveredItem: (hoveredItem) => set({ hoveredItem }),
     setGuideLines: (guideLines) => set({ guideLines }),
-
     updatePlanDirect: (plan) => set({ plan }),
   })),
 );

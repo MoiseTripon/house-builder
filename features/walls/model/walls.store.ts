@@ -60,8 +60,9 @@ interface WallsState {
   setAllWallsHeight: (height: number) => void;
   setWallThickness: (wallId: string, thickness: number) => void;
   setAllWallsThickness: (thickness: number) => void;
+  setAllWallsMaterial: (materialId: string) => void;
 
-  // Sync with plan edges
+  // Sync with plan edges - fixed version
   syncWithEdges: (edgeIds: string[]) => void;
 
   // Selection
@@ -111,20 +112,42 @@ export const useWallsStore = create<WallsState>()(
 
     removeWall: (wallId) => {
       const { walls, selection } = get();
-      const { [wallId]: _, ...remaining } = walls;
+      const { [wallId]: removed, ...remaining } = walls;
+
+      if (!removed) return; // Wall doesn't exist, nothing to do
 
       // Update selection if needed
       const newSelection = {
         wallIds: selection.wallIds.filter((id) => id !== wallId),
-        primary: selection.primary === wallId ? null : selection.primary,
+        primary:
+          selection.primary === wallId
+            ? (selection.wallIds.filter((id) => id !== wallId)[0] ?? null)
+            : selection.primary,
       };
 
       set({ walls: remaining, selection: newSelection });
     },
 
     removeWallByEdge: (edgeId) => {
-      const wall = get().getWallByEdge(edgeId);
-      if (wall) get().removeWall(wall.id);
+      const { walls, selection } = get();
+      const wallToRemove = Object.values(walls).find(
+        (w) => w.edgeId === edgeId,
+      );
+
+      if (!wallToRemove) return;
+
+      const { [wallToRemove.id]: removed, ...remaining } = walls;
+
+      const newSelection = {
+        wallIds: selection.wallIds.filter((id) => id !== wallToRemove.id),
+        primary:
+          selection.primary === wallToRemove.id
+            ? (selection.wallIds.filter((id) => id !== wallToRemove.id)[0] ??
+              null)
+            : selection.primary,
+      };
+
+      set({ walls: remaining, selection: newSelection });
     },
 
     updateWall: (wallId, updates) => {
@@ -145,6 +168,10 @@ export const useWallsStore = create<WallsState>()(
           config.minThickness,
           Math.min(config.maxThickness, updates.thickness),
         );
+      }
+      if (updates.baseZ !== undefined) {
+        // Clamp baseZ to reasonable values (0 to 50000mm = 50m)
+        clampedUpdates.baseZ = Math.max(0, Math.min(50000, updates.baseZ));
       }
 
       set({
@@ -193,21 +220,66 @@ export const useWallsStore = create<WallsState>()(
       set({ walls: updated });
     },
 
+    setAllWallsMaterial: (materialId) => {
+      const { walls } = get();
+
+      const updated: Record<string, Wall> = {};
+      for (const [id, wall] of Object.entries(walls)) {
+        updated[id] = { ...wall, materialId };
+      }
+
+      set({ walls: updated });
+    },
+
     syncWithEdges: (edgeIds) => {
-      const { walls, createWallFromEdge, removeWall } = get();
+      const { walls, config } = get();
       const edgeIdSet = new Set(edgeIds);
 
-      // Remove walls for edges that no longer exist
+      // Build new walls record in a single operation
+      const newWalls: Record<string, Wall> = {};
+      const existingEdgeIds = new Set<string>();
+
+      // Keep walls that still have valid edges
       for (const wall of Object.values(walls)) {
-        if (!edgeIdSet.has(wall.edgeId)) {
-          removeWall(wall.id);
+        if (edgeIdSet.has(wall.edgeId)) {
+          newWalls[wall.id] = wall;
+          existingEdgeIds.add(wall.edgeId);
         }
       }
 
       // Create walls for new edges
       for (const edgeId of edgeIds) {
-        createWallFromEdge(edgeId);
+        if (!existingEdgeIds.has(edgeId)) {
+          const id = generateId("wall");
+          newWalls[id] = {
+            id,
+            edgeId,
+            height: config.defaultHeight,
+            thickness: config.defaultThickness,
+            materialId: config.defaultMaterialId,
+            baseZ: 0,
+          };
+        }
       }
+
+      // Update selection to remove any walls that were removed
+      const { selection } = get();
+      const newWallIds = new Set(Object.keys(newWalls));
+      const newSelectedIds = selection.wallIds.filter((id) =>
+        newWallIds.has(id),
+      );
+      const newPrimary =
+        selection.primary && newWallIds.has(selection.primary)
+          ? selection.primary
+          : (newSelectedIds[0] ?? null);
+
+      set({
+        walls: newWalls,
+        selection: {
+          wallIds: newSelectedIds,
+          primary: newPrimary,
+        },
+      });
     },
 
     selectWall: (wallId) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useEditorStore } from "@/features/editor/model/editor.store";
 import { useWallsStore } from "../model/walls.store";
 import { useWallStats, useWallsSyncStatus } from "../model/walls.selectors";
@@ -15,6 +15,7 @@ export function WallsPanel() {
 
   const walls = useWallsStore((s) => s.walls);
   const config = useWallsStore((s) => s.config);
+  const materials = useWallsStore((s) => s.materials);
   const wallsVisible = useWallsStore((s) => s.wallsVisible);
   const selection = useWallsStore((s) => s.selection);
 
@@ -22,16 +23,26 @@ export function WallsPanel() {
   const setConfig = useWallsStore((s) => s.setConfig);
   const setAllWallsHeight = useWallsStore((s) => s.setAllWallsHeight);
   const setAllWallsThickness = useWallsStore((s) => s.setAllWallsThickness);
+  const setAllWallsMaterial = useWallsStore((s) => s.setAllWallsMaterial);
   const syncWithEdges = useWallsStore((s) => s.syncWithEdges);
   const clearWallSelection = useWallsStore((s) => s.clearWallSelection);
 
   const stats = useWallStats();
   const syncStatus = useWallsSyncStatus();
 
-  // Auto-sync walls with plan edges
+  // Track previous edge IDs to prevent unnecessary syncs
+  const prevEdgeIdsRef = useRef<string>("");
+
+  // Auto-sync walls with plan edges - only when edges actually change
   useEffect(() => {
     const edgeIds = Object.keys(plan.edges);
-    syncWithEdges(edgeIds);
+    const edgeIdsKey = edgeIds.sort().join(",");
+
+    // Only sync if edge IDs actually changed
+    if (edgeIdsKey !== prevEdgeIdsRef.current) {
+      prevEdgeIdsRef.current = edgeIdsKey;
+      syncWithEdges(edgeIds);
+    }
   }, [plan.edges, syncWithEdges]);
 
   const wallCount = Object.keys(walls).length;
@@ -142,23 +153,48 @@ export function WallsPanel() {
             </div>
           </div>
 
+          {/* Default Material */}
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">
+              Default Material
+            </label>
+            <select
+              value={config.defaultMaterialId}
+              onChange={(e) => setConfig({ defaultMaterialId: e.target.value })}
+              className="w-full text-sm px-2 py-1.5 border border-border rounded bg-background"
+            >
+              {materials.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Apply to All */}
           <div className="pt-2 border-t border-border space-y-2">
             <p className="text-xs text-muted-foreground">Apply to all walls:</p>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setAllWallsHeight(config.defaultHeight)}
                 disabled={wallCount === 0}
-                className="flex-1 text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Set All Heights
               </button>
               <button
                 onClick={() => setAllWallsThickness(config.defaultThickness)}
                 disabled={wallCount === 0}
-                className="flex-1 text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Set All Thickness
+              </button>
+              <button
+                onClick={() => setAllWallsMaterial(config.defaultMaterialId)}
+                disabled={wallCount === 0}
+                className="col-span-2 text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Set All Materials
               </button>
             </div>
           </div>

@@ -30,6 +30,12 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
       {/* Wall Info */}
       <div className="space-y-1 text-xs text-muted-foreground">
         <div className="flex justify-between">
+          <span>Wall ID:</span>
+          <span className="text-foreground font-mono text-[10px]">
+            {wall.id.slice(0, 12)}...
+          </span>
+        </div>
+        <div className="flex justify-between">
           <span>Length:</span>
           <span className="text-foreground">
             {formatLength(wallLength, unitConfig)}
@@ -43,74 +49,129 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
         </div>
       </div>
 
-      {/* Height */}
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Height</label>
-        <NumberField
-          value={wall.height}
-          onChange={(v) => updateWall(wall.id, { height: v })}
-          min={config.minHeight}
-          max={config.maxHeight}
-          step={100}
-          suffix="mm"
-        />
-        <div className="flex flex-wrap gap-1 mt-1">
-          {COMMON_HEIGHTS.slice(0, 3).map((h) => (
-            <button
-              key={h.value}
-              onClick={() => updateWall(wall.id, { height: h.value })}
-              className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                wall.height === h.value
-                  ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                  : "border-border hover:bg-muted"
-              }`}
-            >
-              {h.value / 1000}m
-            </button>
-          ))}
+      <div className="border-t border-border pt-3 space-y-3">
+        {/* Height */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Height</label>
+          <NumberField
+            value={wall.height}
+            onChange={(v) => updateWall(wall.id, { height: v })}
+            min={config.minHeight}
+            max={config.maxHeight}
+            step={100}
+            suffix="mm"
+          />
+          <div className="flex flex-wrap gap-1 mt-1">
+            {COMMON_HEIGHTS.slice(0, 3).map((h) => (
+              <button
+                key={h.value}
+                onClick={() => updateWall(wall.id, { height: h.value })}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  wall.height === h.value
+                    ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                {h.value / 1000}m
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Thickness */}
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Thickness</label>
-        <NumberField
-          value={wall.thickness}
-          onChange={(v) => updateWall(wall.id, { thickness: v })}
-          min={config.minThickness}
-          max={config.maxThickness}
-          step={10}
-          suffix="mm"
-        />
-      </div>
+        {/* Thickness */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Thickness</label>
+          <NumberField
+            value={wall.thickness}
+            onChange={(v) => updateWall(wall.id, { thickness: v })}
+            min={config.minThickness}
+            max={config.maxThickness}
+            step={10}
+            suffix="mm"
+          />
+          <div className="flex flex-wrap gap-1 mt-1">
+            {COMMON_THICKNESSES.slice(0, 3).map((t) => (
+              <button
+                key={t.value}
+                onClick={() => updateWall(wall.id, { thickness: t.value })}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  wall.thickness === t.value
+                    ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                {t.value}mm
+              </button>
+            ))}
+          </div>
+        </div>
 
-      {/* Base Z */}
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Base Elevation</label>
-        <NumberField
-          value={wall.baseZ}
-          onChange={(v) => updateWall(wall.id, { baseZ: v })}
-          min={0}
-          max={50000}
-          step={100}
-          suffix="mm"
-        />
-      </div>
+        {/* Base Elevation */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">
+            Base Elevation
+          </label>
+          <NumberField
+            value={wall.baseZ}
+            onChange={(v) => updateWall(wall.id, { baseZ: v })}
+            min={0}
+            max={50000}
+            step={100}
+            suffix="mm"
+          />
+          <div className="flex flex-wrap gap-1 mt-1">
+            {[0, 1000, 2000, 3000].map((z) => (
+              <button
+                key={z}
+                onClick={() => updateWall(wall.id, { baseZ: z })}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  wall.baseZ === z
+                    ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                {z / 1000}m
+              </button>
+            ))}
+          </div>
+        </div>
 
-      {/* Material */}
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground">Material</label>
-        <select
-          value={wall.materialId}
-          onChange={(e) => updateWall(wall.id, { materialId: e.target.value })}
-          className="w-full text-sm px-2 py-1.5 border border-border rounded bg-background"
-        >
-          {materials.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+        {/* Material */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Material</label>
+          <select
+            value={wall.materialId}
+            onChange={(e) =>
+              updateWall(wall.id, { materialId: e.target.value })
+            }
+            className="w-full text-sm px-2 py-1.5 border border-border rounded bg-background"
+          >
+            {materials.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {materials.slice(0, 4).map((m) => (
+              <button
+                key={m.id}
+                onClick={() => updateWall(wall.id, { materialId: m.id })}
+                className={`text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 ${
+                  wall.materialId === m.id
+                    ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: m.color }}
+                />
+                {m.name}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -120,6 +181,7 @@ export function WallsProperties() {
   const selection = useWallsStore((s) => s.selection);
   const walls = useWallsStore((s) => s.walls);
   const config = useWallsStore((s) => s.config);
+  const materials = useWallsStore((s) => s.materials);
   const updateWall = useWallsStore((s) => s.updateWall);
   const clearWallSelection = useWallsStore((s) => s.clearWallSelection);
 
@@ -141,7 +203,7 @@ export function WallsProperties() {
           onClick={clearWallSelection}
           className="w-full mt-3 text-xs px-2 py-1.5 border border-border rounded hover:bg-muted"
         >
-          Deselect
+          Deselect Wall
         </button>
       </Panel>
     );
@@ -158,7 +220,7 @@ export function WallsProperties() {
         {/* Batch Height */}
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Set Height</label>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {COMMON_HEIGHTS.slice(0, 4).map((h) => (
               <button
                 key={h.value}
@@ -167,7 +229,7 @@ export function WallsProperties() {
                     updateWall(w.id, { height: h.value });
                   }
                 }}
-                className="flex-1 text-[10px] px-1 py-1 rounded border border-border hover:bg-muted"
+                className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted"
               >
                 {h.value / 1000}m
               </button>
@@ -178,7 +240,7 @@ export function WallsProperties() {
         {/* Batch Thickness */}
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Set Thickness</label>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {COMMON_THICKNESSES.slice(0, 4).map((t) => (
               <button
                 key={t.value}
@@ -187,9 +249,55 @@ export function WallsProperties() {
                     updateWall(w.id, { thickness: t.value });
                   }
                 }}
-                className="flex-1 text-[10px] px-1 py-1 rounded border border-border hover:bg-muted"
+                className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted"
               >
-                {t.value}
+                {t.value}mm
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Batch Material */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Set Material</label>
+          <div className="flex flex-wrap gap-1">
+            {materials.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => {
+                  for (const w of selectedWalls) {
+                    updateWall(w.id, { materialId: m.id });
+                  }
+                }}
+                className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted flex items-center gap-1"
+              >
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: m.color }}
+                />
+                {m.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Batch Base Elevation */}
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">
+            Set Base Elevation
+          </label>
+          <div className="flex flex-wrap gap-1">
+            {[0, 1000, 2000, 3000].map((z) => (
+              <button
+                key={z}
+                onClick={() => {
+                  for (const w of selectedWalls) {
+                    updateWall(w.id, { baseZ: z });
+                  }
+                }}
+                className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted"
+              >
+                {z / 1000}m
               </button>
             ))}
           </div>

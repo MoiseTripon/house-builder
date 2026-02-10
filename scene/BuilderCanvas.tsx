@@ -7,14 +7,19 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { Canvas } from "@react-three/fiber";
-import { MapControls } from "@react-three/drei";
+import { Canvas, useThree } from "@react-three/fiber";
+import { OrbitControls, MapControls } from "@react-three/drei";
+import * as THREE from "three";
 import { Grid } from "./objects/Grid";
 import { PlanLines } from "./objects/PlanLines";
+import { WallSolids } from "./objects/WallSolids";
 import { Highlights } from "./objects/Highlights";
 import { AngleArcs } from "./objects/Labels";
 import { CanvasInteraction } from "./interaction/CanvasInteraction";
-import { useEditorStore } from "@/features/editor/model/editor.store";
+import {
+  useEditorStore,
+  CameraView,
+} from "@/features/editor/model/editor.store";
 import {
   getSelectedIds,
   isSelected,
@@ -33,14 +38,56 @@ import {
   interiorAngleAt,
   angleLabelPosition,
 } from "@/domain/geometry/polygon";
-import { WallSolids } from "./objects/WallSolids";
+
+/* ================================================================
+   Camera Controller Component
+   ================================================================ */
+
+function CameraController() {
+  const { camera: cam } = useThree();
+  const cameraState = useEditorStore((s) => s.camera);
+  const setCamera = useEditorStore((s) => s.setCamera);
+
+  useEffect(() => {
+    if (cameraState.view === "top") {
+      // Orthographic top-down view
+      cam.position.set(cameraState.x, cameraState.y, 100);
+      cam.up.set(0, 1, 0);
+      if (cam instanceof THREE.OrthographicCamera) {
+        cam.zoom = cameraState.zoom * 0.1;
+        cam.updateProjectionMatrix();
+      }
+    } else {
+      // 3D perspective/angled views
+      const distance = 10000 / Math.max(cameraState.zoom, 0.1);
+      const x =
+        cameraState.x +
+        distance *
+          Math.sin(cameraState.polarAngle) *
+          Math.cos(cameraState.azimuthAngle);
+      const y =
+        cameraState.y +
+        distance *
+          Math.sin(cameraState.polarAngle) *
+          Math.sin(cameraState.azimuthAngle);
+      const z = distance * Math.cos(cameraState.polarAngle);
+
+      cam.position.set(x, y, z);
+      cam.up.set(0, 0, 1);
+      cam.lookAt(cameraState.x, cameraState.y, 0);
+
+      if (cam instanceof THREE.OrthographicCamera) {
+        cam.zoom = cameraState.zoom * 0.1;
+        cam.updateProjectionMatrix();
+      }
+    }
+  }, [cam, cameraState]);
+
+  return null;
+}
 
 /* ================================================================
    Projection helper: world position → screen pixel
-   For R3F orthographic camera:
-     screenX = (worldX − camX) × threeZoom + width/2
-     screenY = −(worldY − camY) × threeZoom + height/2
-   Store zoom = threeZoom × 10, so threeZoom = storeZoom × 0.1
    ================================================================ */
 
 function useProject(w: number, h: number) {
@@ -69,7 +116,13 @@ function LabelsOverlay({ width, height }: { width: number; height: number }) {
   const plan = useEditorStore((s) => s.plan);
   const selection = useEditorStore((s) => s.selection);
   const unitConfig = useEditorStore((s) => s.unitConfig);
+  const cameraView = useEditorStore((s) => s.camera.view);
   const project = useProject(width, height);
+
+  // Only show labels in top view
+  if (cameraView !== "top") {
+    return null;
+  }
 
   const selectedFaceIds = getSelectedIds(selection, "face");
   const selectedVertexIds = getSelectedIds(selection, "vertex");
@@ -174,7 +227,7 @@ function LabelsOverlay({ width, height }: { width: number; height: number }) {
     return result;
   }, [plan, selectedFaceIds, project]);
 
-  /* ---- Vertex angle labels (from containing faces, skip if face selected) ---- */
+  /* ---- Vertex angle labels ---- */
   const vertexAngleLabels = useMemo(() => {
     if (selectedVertexIds.length === 0 || selectedFaceIds.length > 0) return [];
     const result: {
@@ -296,11 +349,48 @@ function LabelsOverlay({ width, height }: { width: number; height: number }) {
 }
 
 /* ================================================================
+   Camera View Switcher UI
+   ================================================================ */
+
+function CameraViewSwitcher() {
+  const cameraView = useEditorStore((s) => s.camera.view);
+  const setCameraView = useEditorStore((s) => s.setCameraView);
+
+  const views: { value: CameraView; label: string; icon: string }[] = [
+    { value: "top", label: "Top", icon: "⬇" },
+    { value: "perspective", label: "3D", icon: "◇" },
+    { value: "front", label: "Front", icon: "□" },
+    { value: "side", label: "Side", icon: "▯" },
+  ];
+
+  return (
+    <div className="absolute top-4 right-4 z-20 flex gap-1 bg-background/90 backdrop-blur-sm rounded-lg p-1 border border-border shadow-lg">
+      {views.map((v) => (
+        <button
+          key={v.value}
+          onClick={() => setCameraView(v.value)}
+          className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+            cameraView === v.value
+              ? "bg-primary text-primary-foreground"
+              : "hover:bg-muted text-muted-foreground"
+          }`}
+          title={v.label}
+        >
+          <span className="mr-1">{v.icon}</span>
+          {v.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ================================================================
    MAIN CANVAS
    ================================================================ */
 
 export function BuilderCanvas() {
   const camera = useEditorStore((s) => s.camera);
+  const setCamera = useEditorStore((s) => s.setCamera);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 });
 
@@ -320,48 +410,118 @@ export function BuilderCanvas() {
     return () => ro.disconnect();
   }, []);
 
+  // Calculate camera position based on view
+  const cameraPosition = useMemo((): [number, number, number] => {
+    if (camera.view === "top") {
+      return [camera.x, camera.y, 100];
+    }
+
+    const dist = 10000 / Math.max(camera.zoom, 0.1);
+    const x =
+      camera.x +
+      dist * Math.sin(camera.polarAngle) * Math.cos(camera.azimuthAngle);
+    const y =
+      camera.y +
+      dist * Math.sin(camera.polarAngle) * Math.sin(camera.azimuthAngle);
+    const z = dist * Math.cos(camera.polarAngle);
+
+    return [x, y, Math.max(z, 100)];
+  }, [camera]);
+
+  const isTopView = camera.view === "top";
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
       <Canvas
         orthographic
         camera={{
-          position: [camera.x, camera.y, 100],
+          position: cameraPosition,
           zoom: camera.zoom * 0.1,
           near: 0.1,
-          far: 1000,
-          up: [0, 0, 1],
+          far: 100000,
+          up: isTopView ? [0, 1, 0] : [0, 0, 1],
         }}
         style={{ background: "#0a0a0f" }}
         gl={{ antialias: true }}
       >
-        <ambientLight intensity={1} />
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[5000, 5000, 10000]} intensity={0.8} />
+        <directionalLight position={[-3000, -3000, 5000]} intensity={0.3} />
+
+        <CameraController />
         <Grid />
         <PlanLines />
         <WallSolids />
         <Highlights />
         <AngleArcs />
-        <CanvasInteraction />
-        <MapControls
-          enableRotate={false}
-          enableDamping={false}
-          screenSpacePanning
-          zoomSpeed={1.2}
-          onChange={(e) => {
-            if (e?.target) {
-              const cam = (e.target as any).object;
-              useEditorStore.getState().setCamera({
-                x: cam.position.x,
-                y: cam.position.y,
-                zoom: cam.zoom * 10,
-              });
-            }
-          }}
-        />
+
+        {/* Only enable interaction in top view */}
+        {isTopView && <CanvasInteraction />}
+
+        {isTopView ? (
+          <MapControls
+            enableRotate={false}
+            enableDamping={false}
+            screenSpacePanning
+            zoomSpeed={1.2}
+            onChange={(e) => {
+              if (e?.target) {
+                const cam = (e.target as any).object;
+                setCamera({
+                  x: cam.position.x,
+                  y: cam.position.y,
+                  zoom: cam.zoom * 10,
+                });
+              }
+            }}
+          />
+        ) : (
+          <OrbitControls
+            enableDamping={false}
+            enablePan={true}
+            enableZoom={true}
+            zoomSpeed={1.2}
+            target={[camera.x, camera.y, 0]}
+            onChange={(e) => {
+              if (e?.target) {
+                const controls = e.target as any;
+                const cam = controls.object;
+
+                // Update zoom from camera
+                setCamera({
+                  zoom: cam.zoom * 10,
+                  // Calculate angles from camera position relative to target
+                  polarAngle: Math.acos(
+                    Math.max(
+                      -1,
+                      Math.min(
+                        1,
+                        (cam.position.z - 0) /
+                          cam.position.distanceTo(
+                            new THREE.Vector3(camera.x, camera.y, 0),
+                          ),
+                      ),
+                    ),
+                  ),
+                  azimuthAngle: Math.atan2(
+                    cam.position.y - camera.y,
+                    cam.position.x - camera.x,
+                  ),
+                });
+              }
+            }}
+          />
+        )}
       </Canvas>
-      <LabelsOverlay
-        width={containerSize.width}
-        height={containerSize.height}
-      />
+
+      <CameraViewSwitcher />
+
+      {isTopView && (
+        <LabelsOverlay
+          width={containerSize.width}
+          height={containerSize.height}
+        />
+      )}
     </div>
   );
 }
