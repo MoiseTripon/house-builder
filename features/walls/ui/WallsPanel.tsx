@@ -90,8 +90,8 @@ export function WallsPanel() {
             </div>
           )}
 
-          {/* Default Height */}
-          <div className="space-y-1">
+          {/* Height */}
+          <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground">Height</label>
             <NumberField
               value={config.defaultHeight}
@@ -107,7 +107,7 @@ export function WallsPanel() {
                   key={h.value}
                   onClick={() => setConfig({ defaultHeight: h.value })}
                   className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded border",
+                    "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
                     config.defaultHeight === h.value
                       ? "border-blue-500 bg-blue-500/10 text-blue-500"
                       : "border-border hover:bg-muted",
@@ -119,8 +119,8 @@ export function WallsPanel() {
             </div>
           </div>
 
-          {/* Default Base Elevation */}
-          <div className="space-y-1">
+          {/* Base Elevation */}
+          <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground">
               Base Elevation
             </label>
@@ -137,7 +137,7 @@ export function WallsPanel() {
                 <button
                   key={z}
                   onClick={() => setAllWallsBaseZ(z)}
-                  className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted transition-colors"
                 >
                   {z / 1000}m
                 </button>
@@ -145,11 +145,11 @@ export function WallsPanel() {
             </div>
           </div>
 
-          {/* Thickness & Material - only when 3D walls visible */}
+          {/* Thickness & Material - only when 3D view and walls visible */}
           {is3DView && show3DWalls && (
             <>
-              {/* Default Thickness */}
-              <div className="space-y-1">
+              {/* Thickness */}
+              <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">
                   Thickness
                 </label>
@@ -167,7 +167,7 @@ export function WallsPanel() {
                       key={t.value}
                       onClick={() => setConfig({ defaultThickness: t.value })}
                       className={cn(
-                        "text-[10px] px-1.5 py-0.5 rounded border",
+                        "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
                         config.defaultThickness === t.value
                           ? "border-blue-500 bg-blue-500/10 text-blue-500"
                           : "border-border hover:bg-muted",
@@ -179,24 +179,31 @@ export function WallsPanel() {
                 </div>
               </div>
 
-              {/* Default Material */}
-              <div className="space-y-1">
+              {/* Material */}
+              <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">
                   Material
                 </label>
-                <select
-                  value={config.defaultMaterialId}
-                  onChange={(e) =>
-                    setConfig({ defaultMaterialId: e.target.value })
-                  }
-                  className="w-full text-xs px-2 py-1.5 border border-border rounded bg-background"
-                >
+                <div className="flex flex-wrap gap-1">
                   {materials.map((m) => (
-                    <option key={m.id} value={m.id}>
+                    <button
+                      key={m.id}
+                      onClick={() => setConfig({ defaultMaterialId: m.id })}
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors",
+                        config.defaultMaterialId === m.id
+                          ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                          : "border-border hover:bg-muted",
+                      )}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: m.color }}
+                      />
                       {m.name}
-                    </option>
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
             </>
           )}
@@ -210,9 +217,9 @@ export function WallsPanel() {
               <div className="grid grid-cols-2 gap-1">
                 <button
                   onClick={() => setAllWallsHeight(config.defaultHeight)}
-                  className="text-[10px] px-2 py-1 bg-muted rounded hover:bg-muted/80"
+                  className="text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
                 >
-                  Heights
+                  Set Heights
                 </button>
                 {is3DView && show3DWalls && (
                   <>
@@ -220,17 +227,17 @@ export function WallsPanel() {
                       onClick={() =>
                         setAllWallsThickness(config.defaultThickness)
                       }
-                      className="text-[10px] px-2 py-1 bg-muted rounded hover:bg-muted/80"
+                      className="text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
                     >
-                      Thickness
+                      Set Thickness
                     </button>
                     <button
                       onClick={() =>
                         setAllWallsMaterial(config.defaultMaterialId)
                       }
-                      className="col-span-2 text-[10px] px-2 py-1 bg-muted rounded hover:bg-muted/80"
+                      className="col-span-2 text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
                     >
-                      Material
+                      Set Material
                     </button>
                   </>
                 )}

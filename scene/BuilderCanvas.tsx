@@ -7,7 +7,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, MapControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Grid } from "./objects/Grid";
@@ -38,14 +38,16 @@ import {
 } from "@/domain/geometry/polygon";
 
 /* ================================================================
-   Plan View Camera Controller - ensures proper top-down view
+   Plan View Camera Setup - ensures proper top-down view
    ================================================================ */
-function PlanViewCameraController() {
-  const { camera } = useThree();
+function PlanViewCamera() {
+  const { camera, gl } = useThree();
   const cameraState = useEditorStore((s) => s.camera);
+  const setCamera = useEditorStore((s) => s.setCamera);
+  const controlsRef = useRef<any>(null);
 
+  // Initial setup for plan view
   useEffect(() => {
-    // Reset camera to proper top-down orientation
     camera.position.set(cameraState.x, cameraState.y, 1000);
     camera.up.set(0, 1, 0);
     camera.lookAt(cameraState.x, cameraState.y, 0);
@@ -54,19 +56,38 @@ function PlanViewCameraController() {
       camera.zoom = cameraState.zoom * 0.1;
       camera.updateProjectionMatrix();
     }
-  }, [camera, cameraState.x, cameraState.y, cameraState.zoom]);
+  }, []);
 
-  return null;
+  return (
+    <MapControls
+      ref={controlsRef}
+      enableRotate={false}
+      enableDamping={false}
+      screenSpacePanning
+      zoomSpeed={1.2}
+      onChange={(e) => {
+        if (e?.target) {
+          const cam = (e.target as any).object;
+          setCamera({
+            x: cam.position.x,
+            y: cam.position.y,
+            zoom: cam.zoom * 10,
+          });
+        }
+      }}
+    />
+  );
 }
 
 /* ================================================================
-   3D View Camera Controller
+   3D View Camera Setup
    ================================================================ */
-function ThreeDViewCameraController() {
+function ThreeDViewCamera() {
   const { camera } = useThree();
   const cameraState = useEditorStore((s) => s.camera);
-  const controlsRef = useRef<any>(null);
+  const setCamera = useEditorStore((s) => s.setCamera);
 
+  // Initial setup for 3D view
   useEffect(() => {
     const dist = cameraState.distance;
     const x =
@@ -89,13 +110,42 @@ function ThreeDViewCameraController() {
       camera.zoom = cameraState.zoom * 0.05;
       camera.updateProjectionMatrix();
     }
-  }, [camera, cameraState]);
+  }, []);
 
-  return null;
+  return (
+    <OrbitControls
+      enableDamping={false}
+      enablePan={true}
+      enableZoom={true}
+      zoomSpeed={1.2}
+      minPolarAngle={0.1}
+      maxPolarAngle={Math.PI / 2 - 0.1}
+      target={[cameraState.x, cameraState.y, 0]}
+      onChange={(e) => {
+        if (e?.target) {
+          const controls = e.target as any;
+          const cam = controls.object;
+          const target = controls.target;
+
+          const dx = cam.position.x - target.x;
+          const dy = cam.position.y - target.y;
+          const dz = cam.position.z - target.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          setCamera({
+            zoom: cam.zoom * 20,
+            distance: dist,
+            polarAngle: Math.acos(Math.max(-1, Math.min(1, dz / dist))),
+            azimuthAngle: Math.atan2(dy, dx),
+          });
+        }
+      }}
+    />
+  );
 }
 
 /* ================================================================
-   Projection helper: world position → screen pixel
+   Projection helper
    ================================================================ */
 function useProject(w: number, h: number) {
   const cam = useEditorStore((s) => s.camera);
@@ -116,7 +166,7 @@ function radToDeg(r: number) {
 }
 
 /* ================================================================
-   HTML overlay for labels (Plan view only)
+   Labels Overlay (Plan view only)
    ================================================================ */
 function LabelsOverlay({ width, height }: { width: number; height: number }) {
   const plan = useEditorStore((s) => s.plan);
@@ -125,7 +175,6 @@ function LabelsOverlay({ width, height }: { width: number; height: number }) {
   const viewMode = useEditorStore((s) => s.viewMode);
   const project = useProject(width, height);
 
-  // Only show in plan view
   if (viewMode !== "plan") {
     return null;
   }
@@ -349,12 +398,33 @@ function LabelsOverlay({ width, height }: { width: number; height: number }) {
 }
 
 /* ================================================================
+   Scene Content - separated to handle view mode switching
+   ================================================================ */
+function SceneContent({ isPlanView }: { isPlanView: boolean }) {
+  return (
+    <>
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[5000, 5000, 10000]} intensity={0.8} />
+      <directionalLight position={[-3000, -3000, 5000]} intensity={0.3} />
+
+      <Grid />
+      <PlanLines />
+      <WallSolids />
+      <Highlights />
+      {isPlanView && <AngleArcs />}
+      {isPlanView && <CanvasInteraction />}
+
+      {isPlanView ? <PlanViewCamera /> : <ThreeDViewCamera />}
+    </>
+  );
+}
+
+/* ================================================================
    MAIN CANVAS
    ================================================================ */
 export function BuilderCanvas() {
   const camera = useEditorStore((s) => s.camera);
   const viewMode = useEditorStore((s) => s.viewMode);
-  const setCamera = useEditorStore((s) => s.setCamera);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 });
 
@@ -376,7 +446,7 @@ export function BuilderCanvas() {
 
   const isPlanView = viewMode === "plan";
 
-  // Camera position calculation
+  // Calculate initial camera position based on view
   const cameraPosition = useMemo((): [number, number, number] => {
     if (isPlanView) {
       return [camera.x, camera.y, 1000];
@@ -394,9 +464,14 @@ export function BuilderCanvas() {
     return [x, y, Math.max(z, 100)];
   }, [camera, isPlanView]);
 
+  // Key forces re-mount of Canvas when view mode changes
+  // This ensures clean camera state
+  const canvasKey = `canvas-${viewMode}`;
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
       <Canvas
+        key={canvasKey}
         orthographic
         camera={{
           position: cameraPosition,
@@ -408,72 +483,7 @@ export function BuilderCanvas() {
         style={{ background: "#0a0a0f" }}
         gl={{ antialias: true }}
       >
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[5000, 5000, 10000]} intensity={0.8} />
-        <directionalLight position={[-3000, -3000, 5000]} intensity={0.3} />
-
-        {isPlanView ? (
-          <PlanViewCameraController />
-        ) : (
-          <ThreeDViewCameraController />
-        )}
-
-        <Grid />
-        <PlanLines />
-        <WallSolids />
-        <Highlights />
-        {isPlanView && <AngleArcs />}
-
-        {isPlanView && <CanvasInteraction />}
-
-        {isPlanView ? (
-          <MapControls
-            enableRotate={false}
-            enableDamping={false}
-            screenSpacePanning
-            zoomSpeed={1.2}
-            onChange={(e) => {
-              if (e?.target) {
-                const cam = (e.target as any).object;
-                setCamera({
-                  x: cam.position.x,
-                  y: cam.position.y,
-                  zoom: cam.zoom * 10,
-                });
-              }
-            }}
-          />
-        ) : (
-          <OrbitControls
-            enableDamping={false}
-            enablePan={true}
-            enableZoom={true}
-            zoomSpeed={1.2}
-            minPolarAngle={0.1}
-            maxPolarAngle={Math.PI / 2 - 0.1}
-            target={[camera.x, camera.y, 0]}
-            onChange={(e) => {
-              if (e?.target) {
-                const controls = e.target as any;
-                const cam = controls.object;
-                const target = controls.target;
-
-                // Calculate spherical coordinates from camera position
-                const dx = cam.position.x - target.x;
-                const dy = cam.position.y - target.y;
-                const dz = cam.position.z - target.z;
-                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-                setCamera({
-                  zoom: cam.zoom * 20,
-                  distance: dist,
-                  polarAngle: Math.acos(Math.max(-1, Math.min(1, dz / dist))),
-                  azimuthAngle: Math.atan2(dy, dx),
-                });
-              }
-            }}
-          />
-        )}
+        <SceneContent isPlanView={isPlanView} />
       </Canvas>
 
       {isPlanView && (

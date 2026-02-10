@@ -15,6 +15,7 @@ import {
   polygonCentroid,
 } from "@/domain/geometry/polygon";
 import { WallsProperties } from "@/features/walls/ui/WallsProperties";
+import { cn } from "@/lib/utils";
 
 function radToDeg(r: number) {
   return (r * 180) / Math.PI;
@@ -22,7 +23,7 @@ function radToDeg(r: number) {
 
 function Row({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between text-xs">
       <span className="text-muted-foreground">{label}:</span>
       <span>{value}</span>
     </div>
@@ -92,7 +93,7 @@ export function PropertiesPanel() {
           </p>
         </Panel>
         <Panel title="Plan Info">
-          <div className="space-y-1 text-xs">
+          <div className="space-y-1">
             <Row label="Vertices" value={Object.keys(plan.vertices).length} />
             <Row label="Edges" value={Object.keys(plan.edges).length} />
             <Row label="Faces" value={Object.keys(plan.faces).length} />
@@ -272,7 +273,7 @@ export function PropertiesPanel() {
           return (
             <>
               <Panel title="Face">
-                <div className="space-y-2 text-xs">
+                <div className="space-y-1">
                   <Row label="Vertices" value={face.vertexIds.length} />
                   <Row label="Edges" value={face.edgeIds.length} />
                   <Row
@@ -337,7 +338,7 @@ export function PropertiesPanel() {
                           })
                         }
                         className="flex-1 px-2 py-1.5 text-xs border border-border rounded hover:bg-muted transition-colors"
-                        title="Scale down 10%"
+                        title="Scale down 10% (Shortcut: [)"
                       >
                         − 10%
                       </button>
@@ -352,10 +353,21 @@ export function PropertiesPanel() {
                           })
                         }
                         className="flex-1 px-2 py-1.5 text-xs border border-border rounded hover:bg-muted transition-colors"
-                        title="Scale up 10%"
+                        title="Scale up 10% (Shortcut: ])"
                       >
                         + 10%
                       </button>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Shortcuts:{" "}
+                      <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">
+                        [
+                      </kbd>{" "}
+                      shrink ·{" "}
+                      <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">
+                        ]
+                      </kbd>{" "}
+                      grow
                     </div>
                   </div>
                 </Panel>

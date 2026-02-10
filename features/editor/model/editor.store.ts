@@ -74,6 +74,7 @@ interface EditorState {
   setSnapConfig: (config: Partial<SnapConfig>) => void;
   setUnitConfig: (config: Partial<UnitConfig>) => void;
   setCamera: (camera: Partial<CameraState>) => void;
+  resetCameraForPlanView: () => void;
   setHoveredItem: (item: EditorState["hoveredItem"]) => void;
   setGuideLines: (lines: EditorState["guideLines"]) => void;
   updatePlanDirect: (plan: Plan) => void;
@@ -151,26 +152,31 @@ export const useEditorStore = create<EditorState>()(
     setMode: (mode) =>
       set({ mode, drawState: INITIAL_DRAW_STATE, dragState: null }),
     setAdvancedMode: (advancedMode) => set({ advancedMode }),
+
     setViewMode: (viewMode) => {
       const current = get();
-      // When switching to plan view, reset to top-down camera
       if (viewMode === "plan") {
-        set({
-          viewMode,
-          mode: current.mode, // Keep current mode
-          drawState: INITIAL_DRAW_STATE,
-          dragState: null,
-        });
-      } else {
-        // When switching to 3D, exit draw mode
+        // When switching to plan view, reset camera and clear 3D-specific state
         set({
           viewMode,
           mode: "select",
           drawState: INITIAL_DRAW_STATE,
           dragState: null,
+          hoveredItem: null,
+        });
+      } else {
+        // When switching to 3D, exit draw mode and clear geometry selection
+        set({
+          viewMode,
+          mode: "select",
+          selection: emptySelection(),
+          drawState: INITIAL_DRAW_STATE,
+          dragState: null,
+          hoveredItem: null,
         });
       }
     },
+
     setSelection: (selection) => set({ selection }),
     clearSelection: () => set({ selection: emptySelection() }),
     setDrawState: (partial) =>
@@ -183,6 +189,17 @@ export const useEditorStore = create<EditorState>()(
       set((s) => ({ unitConfig: { ...s.unitConfig, ...partial } })),
     setCamera: (partial) =>
       set((s) => ({ camera: { ...s.camera, ...partial } })),
+
+    resetCameraForPlanView: () => {
+      const current = get();
+      set({
+        camera: {
+          ...current.camera,
+          // Keep x, y, zoom but ensure proper orientation will be applied
+        },
+      });
+    },
+
     setHoveredItem: (hoveredItem) => set({ hoveredItem }),
     setGuideLines: (guideLines) => set({ guideLines }),
     updatePlanDirect: (plan) => set({ plan }),

@@ -10,6 +10,8 @@ export function useEditorShortcuts() {
     redo,
     mode,
     setMode,
+    viewMode,
+    setViewMode,
     clearSelection,
     selection,
     executeCommand,
@@ -39,6 +41,18 @@ export function useEditorShortcuts() {
         return;
       }
 
+      // View mode shortcuts: 1 = Plan, 2 = 3D
+      if (e.key === "1" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setViewMode("plan");
+        return;
+      }
+      if (e.key === "2" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setViewMode("3d");
+        return;
+      }
+
       // Escape
       if (e.key === "Escape") {
         if (mode === "draw") {
@@ -48,8 +62,11 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Delete
-      if (e.key === "Delete" || e.key === "Backspace") {
+      // Delete - only in plan view
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        viewMode === "plan"
+      ) {
         if (selection.items.length === 0) return;
 
         const faceIds = getSelectedIds(selection, "face");
@@ -74,8 +91,8 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Scale face: [ shrink ] grow
-      if (e.key === "[" || e.key === "]") {
+      // Scale face: [ shrink ] grow - only in plan view
+      if ((e.key === "[" || e.key === "]") && viewMode === "plan") {
         const faceIds = getSelectedIds(selection, "face");
         if (faceIds.length !== 1) return;
         const face = plan.faces[faceIds[0]];
@@ -99,15 +116,17 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Mode shortcuts
-      if (e.key === "v" || e.key === "V") {
-        if (mode === "draw") resetDrawState();
-        setMode("select");
-        return;
-      }
-      if (e.key === "d" || e.key === "D") {
-        setMode("draw");
-        return;
+      // Mode shortcuts - only in plan view
+      if (viewMode === "plan") {
+        if (e.key === "v" || e.key === "V") {
+          if (mode === "draw") resetDrawState();
+          setMode("select");
+          return;
+        }
+        if (e.key === "d" || e.key === "D") {
+          setMode("draw");
+          return;
+        }
       }
     },
     [
@@ -115,6 +134,8 @@ export function useEditorShortcuts() {
       redo,
       mode,
       setMode,
+      viewMode,
+      setViewMode,
       clearSelection,
       selection,
       executeCommand,

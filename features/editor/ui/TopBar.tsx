@@ -35,10 +35,12 @@ export function TopBar() {
   const isPlanView = viewMode === "plan";
 
   const handleViewModeChange = (newViewMode: "plan" | "3d") => {
-    if (newViewMode === "plan") {
-      clearWallSelection();
+    if (newViewMode !== viewMode) {
+      if (newViewMode === "plan") {
+        clearWallSelection();
+      }
+      setViewMode(newViewMode);
     }
-    setViewMode(newViewMode);
   };
 
   return (
@@ -47,22 +49,40 @@ export function TopBar() {
         {/* Left: View Mode + Mode switch + Undo/Redo */}
         <div className="flex items-center gap-3">
           {/* View Mode Toggle */}
-          <Segmented
-            value={viewMode}
-            onChange={handleViewModeChange}
-            options={[
-              {
-                value: "plan" as const,
-                label: "Plan",
-                icon: <span className="text-[10px]">📐</span>,
-              },
-              {
-                value: "3d" as const,
-                label: "3D",
-                icon: <span className="text-[10px]">🏠</span>,
-              },
-            ]}
-          />
+          <div className="flex bg-muted rounded-lg p-0.5 gap-0.5">
+            <button
+              onClick={() => handleViewModeChange("plan")}
+              className={cn(
+                "flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                viewMode === "plan"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Plan View (1)"
+            >
+              <span className="text-[10px]">📐</span>
+              Plan
+              <span className="text-[9px] text-muted-foreground ml-1 opacity-60">
+                1
+              </span>
+            </button>
+            <button
+              onClick={() => handleViewModeChange("3d")}
+              className={cn(
+                "flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                viewMode === "3d"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title="3D View (2)"
+            >
+              <span className="text-[10px]">🏠</span>
+              3D
+              <span className="text-[9px] text-muted-foreground ml-1 opacity-60">
+                2
+              </span>
+            </button>
+          </div>
 
           <div className="w-px h-6 bg-border" />
 
@@ -157,8 +177,7 @@ export function TopBar() {
         {/* Center placeholder for 3D view */}
         {!isPlanView && (
           <div className="text-xs text-muted-foreground">
-            Click walls to select • Shift+Click for multi-select • Orbit to
-            rotate
+            Click walls to select • Shift+Click for multi-select • Drag to orbit
           </div>
         )}
 

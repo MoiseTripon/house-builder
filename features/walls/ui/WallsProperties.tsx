@@ -47,7 +47,7 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
 
       <div className="border-t border-border pt-3 space-y-3">
         {/* Height */}
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">Height</label>
           <NumberField
             value={wall.height}
@@ -63,7 +63,7 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
                 key={h.value}
                 onClick={() => updateWall(wall.id, { height: h.value })}
                 className={cn(
-                  "text-[10px] px-1.5 py-0.5 rounded border",
+                  "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
                   wall.height === h.value
                     ? "border-blue-500 bg-blue-500/10 text-blue-500"
                     : "border-border hover:bg-muted",
@@ -76,7 +76,7 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
         </div>
 
         {/* Base Elevation */}
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">
             Base Elevation
           </label>
@@ -89,12 +89,12 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
             suffix="mm"
           />
           <div className="flex flex-wrap gap-1">
-            {[0, 2700, 5400].map((z) => (
+            {[0, 2700, 5400, 8100].map((z) => (
               <button
                 key={z}
                 onClick={() => updateWall(wall.id, { baseZ: z })}
                 className={cn(
-                  "text-[10px] px-1.5 py-0.5 rounded border",
+                  "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
                   wall.baseZ === z
                     ? "border-blue-500 bg-blue-500/10 text-blue-500"
                     : "border-border hover:bg-muted",
@@ -110,7 +110,7 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
         {show3DWalls && (
           <>
             {/* Thickness */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Thickness</label>
               <NumberField
                 value={wall.thickness}
@@ -120,10 +120,26 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
                 step={10}
                 suffix="mm"
               />
+              <div className="flex flex-wrap gap-1">
+                {COMMON_THICKNESSES.slice(0, 4).map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => updateWall(wall.id, { thickness: t.value })}
+                    className={cn(
+                      "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
+                      wall.thickness === t.value
+                        ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                        : "border-border hover:bg-muted",
+                    )}
+                  >
+                    {t.value}mm
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Material */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Material</label>
               <div className="flex flex-wrap gap-1">
                 {materials.map((m) => (
@@ -131,14 +147,14 @@ function WallPropertyEditor({ wall }: { wall: Wall }) {
                     key={m.id}
                     onClick={() => updateWall(wall.id, { materialId: m.id })}
                     className={cn(
-                      "text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1",
+                      "text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors",
                       wall.materialId === m.id
                         ? "border-blue-500 bg-blue-500/10 text-blue-500"
                         : "border-border hover:bg-muted",
                     )}
                   >
                     <span
-                      className="w-2 h-2 rounded-full"
+                      className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: m.color }}
                     />
                     {m.name}
@@ -214,7 +230,7 @@ export function WallsProperties() {
           <WallPropertyEditor wall={selectedWalls[0]} />
           <button
             onClick={clearWallSelection}
-            className="w-full mt-3 text-xs px-2 py-1.5 border border-border rounded hover:bg-muted"
+            className="w-full mt-3 text-xs px-2 py-1.5 border border-border rounded hover:bg-muted transition-colors"
           >
             Deselect
           </button>
@@ -230,7 +246,7 @@ export function WallsProperties() {
       <Panel title={`${selectedWalls.length} Walls Selected`}>
         <div className="space-y-3">
           {/* Batch Height */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground">Set Height</label>
             <div className="flex flex-wrap gap-1">
               {COMMON_HEIGHTS.slice(0, 4).map((h) => (
@@ -241,7 +257,7 @@ export function WallsProperties() {
                       updateWall(w.id, { height: h.value });
                     }
                   }}
-                  className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted transition-colors"
                 >
                   {h.value / 1000}m
                 </button>
@@ -250,10 +266,12 @@ export function WallsProperties() {
           </div>
 
           {/* Batch Base Elevation */}
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Set Base</label>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">
+              Set Base Elevation
+            </label>
             <div className="flex flex-wrap gap-1">
-              {[0, 2700, 5400].map((z) => (
+              {[0, 2700, 5400, 8100].map((z) => (
                 <button
                   key={z}
                   onClick={() => {
@@ -261,7 +279,7 @@ export function WallsProperties() {
                       updateWall(w.id, { baseZ: z });
                     }
                   }}
-                  className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted"
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted transition-colors"
                 >
                   {z / 1000}m
                 </button>
@@ -272,7 +290,7 @@ export function WallsProperties() {
           {/* Batch Thickness & Material - only when 3D walls visible */}
           {show3DWalls && (
             <>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">
                   Set Thickness
                 </label>
@@ -285,7 +303,7 @@ export function WallsProperties() {
                           updateWall(w.id, { thickness: t.value });
                         }
                       }}
-                      className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted"
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted transition-colors"
                     >
                       {t.value}mm
                     </button>
@@ -293,7 +311,7 @@ export function WallsProperties() {
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">
                   Set Material
                 </label>
@@ -306,10 +324,10 @@ export function WallsProperties() {
                           updateWall(w.id, { materialId: m.id });
                         }
                       }}
-                      className="text-[10px] px-1.5 py-1 rounded border border-border hover:bg-muted flex items-center gap-1"
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted flex items-center gap-1 transition-colors"
                     >
                       <span
-                        className="w-2 h-2 rounded-full"
+                        className="w-2 h-2 rounded-full flex-shrink-0"
                         style={{ backgroundColor: m.color }}
                       />
                       {m.name}
@@ -322,7 +340,7 @@ export function WallsProperties() {
 
           <button
             onClick={clearWallSelection}
-            className="w-full text-xs px-2 py-1.5 border border-border rounded hover:bg-muted"
+            className="w-full text-xs px-2 py-1.5 border border-border rounded hover:bg-muted transition-colors"
           >
             Clear Selection
           </button>
