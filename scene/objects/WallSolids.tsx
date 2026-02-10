@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import * as THREE from "three";
 import { ThreeEvent } from "@react-three/fiber";
+import { useEditorStore } from "@/features/editor/model/editor.store";
 import { useWallsStore } from "@/features/walls/model/walls.store";
 import { useWallSolidsWithMaterials } from "@/features/walls/model/walls.selectors";
 
@@ -31,8 +32,6 @@ function WallMesh({
   onPointerOver,
   onPointerOut,
 }: WallMeshProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
-
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
@@ -41,10 +40,9 @@ function WallMesh({
     return geo;
   }, [vertices, indices, normals]);
 
-  // Determine display color
   const displayColor = useMemo(() => {
-    if (isSelected) return "#60a5fa"; // blue
-    if (isHovered) return "#93c5fd"; // light blue
+    if (isSelected) return "#60a5fa";
+    if (isHovered) return "#93c5fd";
     return color;
   }, [color, isSelected, isHovered]);
 
@@ -56,7 +54,6 @@ function WallMesh({
 
   return (
     <mesh
-      ref={meshRef}
       geometry={geometry}
       onClick={onClick}
       onPointerOver={onPointerOver}
@@ -74,14 +71,151 @@ function WallMesh({
   );
 }
 
+/* ================================================================
+   Wall Planes - flat 2D representation for 3D view without 3D walls
+   ================================================================ */
+function WallPlanes() {
+  const plan = useEditorStore((s) => s.plan);
+  const walls = useWallsStore((s) => s.walls);
+  const selection = useWallsStore((s) => s.selection);
+  const selectWall = useWallsStore((s) => s.selectWall);
+  const toggleWallSelection = useWallsStore((s) => s.toggleWallSelection);
+
+  const wallPlanes = useMemo(() => {
+    return Object.values(walls)
+      .map((wall) => {
+        const edge = plan.edges[wall.edgeId];
+        if (!edge) return null;
+
+        const startV = plan.vertices[edge.startId];
+        const endV = plan.vertices[edge.endId];
+        if (!startV || !endV) return null;
+
+        const isSelected = selection.wallIds.includes(wall.id);
+
+        // Create a plane from base to top of wall
+        const start = startV.position;
+        const end = endV.position;
+        const height = wall.height;
+        const baseZ = wall.baseZ;
+
+        const vertices = new Float32Array([
+          start.x,
+          start.y,
+          baseZ,
+          end.x,
+          end.y,
+          baseZ,
+          end.x,
+          end.y,
+          baseZ + height,
+          start.x,
+          start.y,
+          baseZ + height,
+        ]);
+
+        const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        const normals = new Float32Array([
+          nx,
+          ny,
+          0,
+          nx,
+          ny,
+          0,
+          nx,
+          ny,
+          0,
+          nx,
+          ny,
+          0,
+        ]);
+
+        return { wall, vertices, indices, normals, isSelected };
+      })
+      .filter(Boolean) as {
+      wall: (typeof walls)[string];
+      vertices: Float32Array;
+      indices: Uint16Array;
+      normals: Float32Array;
+      isSelected: boolean;
+    }[];
+  }, [walls, plan.edges, plan.vertices, selection]);
+
+  return (
+    <group name="wall-planes">
+      {wallPlanes.map(({ wall, vertices, indices, normals, isSelected }) => {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(vertices, 3),
+        );
+        geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+        geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+
+        return (
+          <mesh
+            key={wall.id}
+            geometry={geometry}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (e.nativeEvent.shiftKey) {
+                toggleWallSelection(wall.id);
+              } else {
+                selectWall(wall.id);
+              }
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              document.body.style.cursor = "pointer";
+            }}
+            onPointerOut={() => {
+              document.body.style.cursor = "default";
+            }}
+          >
+            <meshStandardMaterial
+              color={isSelected ? "#60a5fa" : "#64748b"}
+              roughness={0.8}
+              metalness={0.1}
+              emissive={isSelected ? "#1d4ed8" : "#000000"}
+              emissiveIntensity={isSelected ? 0.3 : 0}
+              side={THREE.DoubleSide}
+              transparent
+              opacity={0.8}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
 export function WallSolids() {
-  const wallsVisible = useWallsStore((s) => s.wallsVisible);
+  const viewMode = useEditorStore((s) => s.viewMode);
+  const show3DWalls = useWallsStore((s) => s.show3DWalls);
   const selectWall = useWallsStore((s) => s.selectWall);
   const toggleWallSelection = useWallsStore((s) => s.toggleWallSelection);
 
   const wallData = useWallSolidsWithMaterials();
 
-  if (!wallsVisible || wallData.length === 0) {
+  // In plan view, don't render anything (PlanLines handles it)
+  if (viewMode === "plan") {
+    return null;
+  }
+
+  // In 3D view without 3D walls enabled, show flat planes
+  if (!show3DWalls) {
+    return <WallPlanes />;
+  }
+
+  // Full 3D walls
+  if (wallData.length === 0) {
     return null;
   }
 

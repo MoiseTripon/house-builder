@@ -7,7 +7,6 @@ import { Panel } from "@/shared/ui/Panel";
 import { NumberField } from "@/shared/ui/NumberField";
 import { Vec2, distance } from "@/domain/geometry/vec2";
 import { formatLength } from "@/domain/units/units";
-import { WallsProperties } from "@/features/walls/ui/WallsProperties";
 import {
   polygonArea,
   polygonPerimeter,
@@ -15,6 +14,7 @@ import {
   interiorAngleAt,
   polygonCentroid,
 } from "@/domain/geometry/polygon";
+import { WallsProperties } from "@/features/walls/ui/WallsProperties";
 
 function radToDeg(r: number) {
   return (r * 180) / Math.PI;
@@ -32,6 +32,7 @@ function Row({ label, value }: { label: string; value: string | number }) {
 export function PropertiesPanel() {
   const plan = useEditorStore((s) => s.plan);
   const selection = useEditorStore((s) => s.selection);
+  const viewMode = useEditorStore((s) => s.viewMode);
   const unitConfig = useEditorStore((s) => s.unitConfig);
   const executeCommand = useEditorStore((s) => s.executeCommand);
   const clearSelection = useEditorStore((s) => s.clearSelection);
@@ -41,10 +42,8 @@ export function PropertiesPanel() {
   const selectedFaceIds = getSelectedIds(selection, "face");
 
   const hasSelection = selection.items.length > 0;
+  const isPlanView = viewMode === "plan";
 
-  /* ================================================================
-     Face bounding box (for resize)
-     ================================================================ */
   const faceBounds = useMemo(() => {
     if (selectedFaceIds.length !== 1) return null;
     const face = plan.faces[selectedFaceIds[0]];
@@ -74,9 +73,16 @@ export function PropertiesPanel() {
     };
   }, [plan, selectedFaceIds]);
 
-  /* ================================================================
-     NO SELECTION
-     ================================================================ */
+  // In 3D view, show only wall properties
+  if (!isPlanView) {
+    return (
+      <div className="p-4 space-y-3">
+        <WallsProperties />
+      </div>
+    );
+  }
+
+  // Plan view - show geometry properties
   if (!hasSelection) {
     return (
       <div className="p-4 space-y-3">
@@ -98,9 +104,7 @@ export function PropertiesPanel() {
 
   return (
     <div className="p-4 space-y-3">
-      {/* ==============================================================
-          SINGLE VERTEX
-          ============================================================== */}
+      {/* SINGLE VERTEX */}
       {selectedVertexIds.length === 1 &&
         (() => {
           const vertex = plan.vertices[selectedVertexIds[0]];
@@ -205,9 +209,7 @@ export function PropertiesPanel() {
           );
         })()}
 
-      {/* ==============================================================
-          SINGLE EDGE
-          ============================================================== */}
+      {/* SINGLE EDGE */}
       {selectedEdgeIds.length === 1 &&
         (() => {
           const edge = plan.edges[selectedEdgeIds[0]];
@@ -250,9 +252,7 @@ export function PropertiesPanel() {
           );
         })()}
 
-      {/* ==============================================================
-          SINGLE FACE
-          ============================================================== */}
+      {/* SINGLE FACE */}
       {selectedFaceIds.length === 1 &&
         (() => {
           const face = plan.faces[selectedFaceIds[0]];
@@ -286,7 +286,6 @@ export function PropertiesPanel() {
                 </div>
               </Panel>
 
-              {/* Scale / Resize */}
               {faceBounds && (
                 <Panel title="Resize Face">
                   <div className="space-y-2">
@@ -338,7 +337,7 @@ export function PropertiesPanel() {
                           })
                         }
                         className="flex-1 px-2 py-1.5 text-xs border border-border rounded hover:bg-muted transition-colors"
-                        title="Scale down 10%  [ "
+                        title="Scale down 10%"
                       >
                         − 10%
                       </button>
@@ -353,27 +352,15 @@ export function PropertiesPanel() {
                           })
                         }
                         className="flex-1 px-2 py-1.5 text-xs border border-border rounded hover:bg-muted transition-colors"
-                        title="Scale up 10%  ] "
+                        title="Scale up 10%"
                       >
                         + 10%
                       </button>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      Shortcuts:{" "}
-                      <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">
-                        [
-                      </kbd>{" "}
-                      shrink ·{" "}
-                      <kbd className="px-1 py-0.5 bg-muted rounded text-[9px]">
-                        ]
-                      </kbd>{" "}
-                      grow
                     </div>
                   </div>
                 </Panel>
               )}
 
-              {/* Interior Angles */}
               <Panel title="Interior Angles" collapsible>
                 <div className="space-y-1.5">
                   {angles.map((angleRad, i) => {
@@ -419,7 +406,6 @@ export function PropertiesPanel() {
                 </div>
               </Panel>
 
-              {/* Delete face */}
               <Panel title="Actions">
                 <button
                   onClick={() => {
@@ -435,9 +421,7 @@ export function PropertiesPanel() {
           );
         })()}
 
-      {/* ==============================================================
-          MULTI-SELECTION
-          ============================================================== */}
+      {/* MULTI-SELECTION */}
       {selection.items.length > 1 && (
         <Panel title="Multi-Selection">
           <div className="space-y-1 text-xs">
@@ -460,8 +444,6 @@ export function PropertiesPanel() {
           </div>
         </Panel>
       )}
-      {/* WALLS PROPERTIES */}
-      <WallsProperties />
     </div>
   );
 }

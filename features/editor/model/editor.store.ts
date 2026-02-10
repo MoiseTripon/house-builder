@@ -10,7 +10,7 @@ import { Vec2 } from "@/domain/geometry/vec2";
 
 export type EditorMode = "select" | "draw";
 export type AdvancedMode = "simple" | "advanced";
-export type CameraView = "top" | "perspective" | "front" | "side";
+export type ViewMode = "plan" | "3d";
 
 export interface DrawState {
   vertexIds: string[];
@@ -35,18 +35,18 @@ interface HistoryEntry {
 export interface CameraState {
   x: number;
   y: number;
-  z: number;
   zoom: number;
-  view: CameraView;
-  // For perspective view
-  polarAngle: number; // vertical angle (0 = top, PI/2 = horizon)
-  azimuthAngle: number; // horizontal rotation
+  // For 3D view
+  polarAngle: number;
+  azimuthAngle: number;
+  distance: number;
 }
 
 interface EditorState {
   plan: Plan;
   mode: EditorMode;
   advancedMode: AdvancedMode;
+  viewMode: ViewMode;
   selection: Selection;
   drawState: DrawState;
   dragState: DragState | null;
@@ -65,6 +65,7 @@ interface EditorState {
   canRedo: () => boolean;
   setMode: (mode: EditorMode) => void;
   setAdvancedMode: (mode: AdvancedMode) => void;
+  setViewMode: (viewMode: ViewMode) => void;
   setSelection: (selection: Selection) => void;
   clearSelection: () => void;
   setDrawState: (state: Partial<DrawState>) => void;
@@ -73,7 +74,6 @@ interface EditorState {
   setSnapConfig: (config: Partial<SnapConfig>) => void;
   setUnitConfig: (config: Partial<UnitConfig>) => void;
   setCamera: (camera: Partial<CameraState>) => void;
-  setCameraView: (view: CameraView) => void;
   setHoveredItem: (item: EditorState["hoveredItem"]) => void;
   setGuideLines: (lines: EditorState["guideLines"]) => void;
   updatePlanDirect: (plan: Plan) => void;
@@ -88,28 +88,20 @@ const INITIAL_DRAW_STATE: DrawState = {
 const INITIAL_CAMERA: CameraState = {
   x: 0,
   y: 0,
-  z: 100,
   zoom: 1,
-  view: "top",
-  polarAngle: 0, // Looking straight down
-  azimuthAngle: 0,
+  polarAngle: Math.PI / 4,
+  azimuthAngle: Math.PI / 4,
+  distance: 15000,
 };
 
 const MAX_HISTORY = 100;
-
-// Predefined camera positions for different views
-const CAMERA_PRESETS: Record<CameraView, Partial<CameraState>> = {
-  top: { polarAngle: 0, azimuthAngle: 0 },
-  perspective: { polarAngle: Math.PI / 4, azimuthAngle: Math.PI / 4 },
-  front: { polarAngle: Math.PI / 2, azimuthAngle: 0 },
-  side: { polarAngle: Math.PI / 2, azimuthAngle: Math.PI / 2 },
-};
 
 export const useEditorStore = create<EditorState>()(
   subscribeWithSelector((set, get) => ({
     plan: createEmptyPlan(),
     mode: "select",
     advancedMode: "simple",
+    viewMode: "plan",
     selection: emptySelection(),
     drawState: INITIAL_DRAW_STATE,
     dragState: null,
@@ -159,6 +151,26 @@ export const useEditorStore = create<EditorState>()(
     setMode: (mode) =>
       set({ mode, drawState: INITIAL_DRAW_STATE, dragState: null }),
     setAdvancedMode: (advancedMode) => set({ advancedMode }),
+    setViewMode: (viewMode) => {
+      const current = get();
+      // When switching to plan view, reset to top-down camera
+      if (viewMode === "plan") {
+        set({
+          viewMode,
+          mode: current.mode, // Keep current mode
+          drawState: INITIAL_DRAW_STATE,
+          dragState: null,
+        });
+      } else {
+        // When switching to 3D, exit draw mode
+        set({
+          viewMode,
+          mode: "select",
+          drawState: INITIAL_DRAW_STATE,
+          dragState: null,
+        });
+      }
+    },
     setSelection: (selection) => set({ selection }),
     clearSelection: () => set({ selection: emptySelection() }),
     setDrawState: (partial) =>
@@ -171,10 +183,6 @@ export const useEditorStore = create<EditorState>()(
       set((s) => ({ unitConfig: { ...s.unitConfig, ...partial } })),
     setCamera: (partial) =>
       set((s) => ({ camera: { ...s.camera, ...partial } })),
-    setCameraView: (view) => {
-      const preset = CAMERA_PRESETS[view];
-      set((s) => ({ camera: { ...s.camera, view, ...preset } }));
-    },
     setHoveredItem: (hoveredItem) => set({ hoveredItem }),
     setGuideLines: (guideLines) => set({ guideLines }),
     updatePlanDirect: (plan) => set({ plan }),

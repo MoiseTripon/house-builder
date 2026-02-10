@@ -3,6 +3,7 @@
 import React from "react";
 import { useEditorStore } from "../model/editor.store";
 import { useEditorShortcuts } from "../interaction/shortcuts";
+import { useWallsStore } from "@/features/walls/model/walls.store";
 import { Segmented } from "@/shared/ui/Segmented";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +13,8 @@ export function TopBar() {
   const {
     mode,
     setMode,
+    viewMode,
+    setViewMode,
     advancedMode,
     setAdvancedMode,
     snapConfig,
@@ -24,32 +27,68 @@ export function TopBar() {
     resetDrawState,
   } = useEditorStore();
 
+  const clearWallSelection = useWallsStore((s) => s.clearWallSelection);
+
   const canUndo = useEditorStore((s) => s.undoStack.length > 0);
   const canRedo = useEditorStore((s) => s.redoStack.length > 0);
   const verticesPlaced = drawState.vertexIds.length;
+  const isPlanView = viewMode === "plan";
+
+  const handleViewModeChange = (newViewMode: "plan" | "3d") => {
+    if (newViewMode === "plan") {
+      clearWallSelection();
+    }
+    setViewMode(newViewMode);
+  };
 
   return (
     <div className="flex flex-col border-b border-border bg-background">
       <div className="flex items-center justify-between px-4 py-2">
-        {/* Left: Mode switch (Select + Draw only) + Undo/Redo */}
+        {/* Left: View Mode + Mode switch + Undo/Redo */}
         <div className="flex items-center gap-3">
+          {/* View Mode Toggle */}
           <Segmented
-            value={mode}
-            onChange={setMode}
+            value={viewMode}
+            onChange={handleViewModeChange}
             options={[
               {
-                value: "select" as const,
-                label: "Select",
-                icon: <span className="text-[10px] opacity-50">V</span>,
+                value: "plan" as const,
+                label: "Plan",
+                icon: <span className="text-[10px]">📐</span>,
               },
               {
-                value: "draw" as const,
-                label: "Draw",
-                icon: <span className="text-[10px] opacity-50">D</span>,
+                value: "3d" as const,
+                label: "3D",
+                icon: <span className="text-[10px]">🏠</span>,
               },
             ]}
           />
+
           <div className="w-px h-6 bg-border" />
+
+          {/* Mode switch - only in plan view */}
+          {isPlanView && (
+            <>
+              <Segmented
+                value={mode}
+                onChange={setMode}
+                options={[
+                  {
+                    value: "select" as const,
+                    label: "Select",
+                    icon: <span className="text-[10px] opacity-50">V</span>,
+                  },
+                  {
+                    value: "draw" as const,
+                    label: "Draw",
+                    icon: <span className="text-[10px] opacity-50">D</span>,
+                  },
+                ]}
+              />
+              <div className="w-px h-6 bg-border" />
+            </>
+          )}
+
           <div className="flex items-center gap-1">
             <button
               onClick={undo}
@@ -76,40 +115,52 @@ export function TopBar() {
           </div>
         </div>
 
-        {/* Center: snap */}
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={snapConfig.gridEnabled}
-              onChange={(e) => setSnapConfig({ gridEnabled: e.target.checked })}
-              className="rounded"
-            />
-            Grid
-          </label>
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={snapConfig.angleEnabled}
-              onChange={(e) =>
-                setSnapConfig({ angleEnabled: e.target.checked })
-              }
-              className="rounded"
-            />
-            Angle ({snapConfig.angleStep}°)
-          </label>
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={snapConfig.geometryEnabled}
-              onChange={(e) =>
-                setSnapConfig({ geometryEnabled: e.target.checked })
-              }
-              className="rounded"
-            />
-            Geometry
-          </label>
-        </div>
+        {/* Center: snap - only in plan view */}
+        {isPlanView && (
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={snapConfig.gridEnabled}
+                onChange={(e) =>
+                  setSnapConfig({ gridEnabled: e.target.checked })
+                }
+                className="rounded"
+              />
+              Grid
+            </label>
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={snapConfig.angleEnabled}
+                onChange={(e) =>
+                  setSnapConfig({ angleEnabled: e.target.checked })
+                }
+                className="rounded"
+              />
+              Angle ({snapConfig.angleStep}°)
+            </label>
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={snapConfig.geometryEnabled}
+                onChange={(e) =>
+                  setSnapConfig({ geometryEnabled: e.target.checked })
+                }
+                className="rounded"
+              />
+              Geometry
+            </label>
+          </div>
+        )}
+
+        {/* Center placeholder for 3D view */}
+        {!isPlanView && (
+          <div className="text-xs text-muted-foreground">
+            Click walls to select • Shift+Click for multi-select • Orbit to
+            rotate
+          </div>
+        )}
 
         {/* Right: Units + Advanced */}
         <div className="flex items-center gap-3">
@@ -132,8 +183,8 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Draw mode status bar */}
-      {mode === "draw" && (
+      {/* Draw mode status bar - only in plan view */}
+      {isPlanView && mode === "draw" && (
         <div className="flex items-center justify-between px-4 py-1.5 bg-amber-500/10 border-t border-amber-500/20">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />

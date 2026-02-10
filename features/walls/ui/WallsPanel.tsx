@@ -1,44 +1,39 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/features/editor/model/editor.store";
 import { useWallsStore } from "../model/walls.store";
-import { useWallStats, useWallsSyncStatus } from "../model/walls.selectors";
 import { COMMON_HEIGHTS, COMMON_THICKNESSES } from "../model/walls.defaults";
-import { Panel } from "@/shared/ui/Panel";
 import { NumberField } from "@/shared/ui/NumberField";
-import { formatLength } from "@/domain/units/units";
+import { cn } from "@/lib/utils";
 
 export function WallsPanel() {
   const plan = useEditorStore((s) => s.plan);
-  const unitConfig = useEditorStore((s) => s.unitConfig);
+  const viewMode = useEditorStore((s) => s.viewMode);
 
   const walls = useWallsStore((s) => s.walls);
   const config = useWallsStore((s) => s.config);
   const materials = useWallsStore((s) => s.materials);
-  const wallsVisible = useWallsStore((s) => s.wallsVisible);
+  const show3DWalls = useWallsStore((s) => s.show3DWalls);
   const selection = useWallsStore((s) => s.selection);
 
-  const setWallsVisible = useWallsStore((s) => s.setWallsVisible);
+  const setShow3DWalls = useWallsStore((s) => s.setShow3DWalls);
   const setConfig = useWallsStore((s) => s.setConfig);
   const setAllWallsHeight = useWallsStore((s) => s.setAllWallsHeight);
   const setAllWallsThickness = useWallsStore((s) => s.setAllWallsThickness);
   const setAllWallsMaterial = useWallsStore((s) => s.setAllWallsMaterial);
+  const setAllWallsBaseZ = useWallsStore((s) => s.setAllWallsBaseZ);
   const syncWithEdges = useWallsStore((s) => s.syncWithEdges);
   const clearWallSelection = useWallsStore((s) => s.clearWallSelection);
 
-  const stats = useWallStats();
-  const syncStatus = useWallsSyncStatus();
+  const [isOpen, setIsOpen] = useState(true);
 
-  // Track previous edge IDs to prevent unnecessary syncs
   const prevEdgeIdsRef = useRef<string>("");
 
-  // Auto-sync walls with plan edges - only when edges actually change
   useEffect(() => {
     const edgeIds = Object.keys(plan.edges);
     const edgeIdsKey = edgeIds.sort().join(",");
 
-    // Only sync if edge IDs actually changed
     if (edgeIdsKey !== prevEdgeIdsRef.current) {
       prevEdgeIdsRef.current = edgeIdsKey;
       syncWithEdges(edgeIds);
@@ -47,57 +42,57 @@ export function WallsPanel() {
 
   const wallCount = Object.keys(walls).length;
   const selectedCount = selection.wallIds.length;
+  const is3DView = viewMode === "3d";
 
   return (
-    <div className="space-y-3">
-      {/* Visibility Toggle */}
-      <Panel title="Walls">
-        <div className="space-y-3">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={wallsVisible}
-              onChange={(e) => setWallsVisible(e.target.checked)}
-              className="rounded border-border"
-            />
-            <span className="text-sm">Show 3D Walls</span>
-          </label>
+    <div className="border border-border rounded-lg overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span>Walls</span>
+          <span className="text-[10px] text-muted-foreground">
+            ({wallCount})
+          </span>
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {isOpen ? "▼" : "▶"}
+        </span>
+      </button>
 
-          {!syncStatus.isSynced && (
-            <div className="text-xs text-amber-500 bg-amber-500/10 rounded px-2 py-1">
-              ⚠ Walls out of sync with plan
+      {isOpen && (
+        <div className="border-t border-border p-3 space-y-3">
+          {/* 3D Walls Toggle - only in 3D view */}
+          {is3DView && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={show3DWalls}
+                onChange={(e) => setShow3DWalls(e.target.checked)}
+                className="rounded border-border"
+              />
+              <span className="text-xs">Show 3D Walls</span>
+            </label>
+          )}
+
+          {/* Selection info */}
+          {selectedCount > 0 && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-blue-500">{selectedCount} selected</span>
               <button
-                onClick={() => syncWithEdges(Object.keys(plan.edges))}
-                className="ml-2 underline hover:no-underline"
+                onClick={clearWallSelection}
+                className="text-muted-foreground hover:text-foreground"
               >
-                Sync now
+                Clear
               </button>
             </div>
           )}
 
-          <div className="text-xs text-muted-foreground space-y-1">
-            <div className="flex justify-between">
-              <span>Walls:</span>
-              <span>{wallCount}</span>
-            </div>
-            {selectedCount > 0 && (
-              <div className="flex justify-between text-blue-500">
-                <span>Selected:</span>
-                <span>{selectedCount}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </Panel>
-
-      {/* Global Settings */}
-      <Panel title="Global Wall Settings">
-        <div className="space-y-3">
           {/* Default Height */}
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">
-              Default Height
-            </label>
+            <label className="text-xs text-muted-foreground">Height</label>
             <NumberField
               value={config.defaultHeight}
               onChange={(v) => setConfig({ defaultHeight: v })}
@@ -106,16 +101,17 @@ export function WallsPanel() {
               step={100}
               suffix="mm"
             />
-            <div className="flex flex-wrap gap-1 mt-1">
+            <div className="flex flex-wrap gap-1">
               {COMMON_HEIGHTS.slice(0, 4).map((h) => (
                 <button
                   key={h.value}
                   onClick={() => setConfig({ defaultHeight: h.value })}
-                  className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded border",
                     config.defaultHeight === h.value
                       ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                      : "border-border hover:bg-muted"
-                  }`}
+                      : "border-border hover:bg-muted",
+                  )}
                 >
                   {h.value / 1000}m
                 </button>
@@ -123,116 +119,125 @@ export function WallsPanel() {
             </div>
           </div>
 
-          {/* Default Thickness */}
+          {/* Default Base Elevation */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">
-              Default Thickness
+              Base Elevation
             </label>
             <NumberField
-              value={config.defaultThickness}
-              onChange={(v) => setConfig({ defaultThickness: v })}
-              min={config.minThickness}
-              max={config.maxThickness}
-              step={10}
+              value={0}
+              onChange={(v) => setAllWallsBaseZ(v)}
+              min={0}
+              max={50000}
+              step={100}
               suffix="mm"
             />
-            <div className="flex flex-wrap gap-1 mt-1">
-              {COMMON_THICKNESSES.slice(0, 4).map((t) => (
+            <div className="flex flex-wrap gap-1">
+              {[0, 2700, 5400, 8100].map((z) => (
                 <button
-                  key={t.value}
-                  onClick={() => setConfig({ defaultThickness: t.value })}
-                  className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                    config.defaultThickness === t.value
-                      ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                      : "border-border hover:bg-muted"
-                  }`}
+                  key={z}
+                  onClick={() => setAllWallsBaseZ(z)}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted"
                 >
-                  {t.value}mm
+                  {z / 1000}m
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Default Material */}
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">
-              Default Material
-            </label>
-            <select
-              value={config.defaultMaterialId}
-              onChange={(e) => setConfig({ defaultMaterialId: e.target.value })}
-              className="w-full text-sm px-2 py-1.5 border border-border rounded bg-background"
-            >
-              {materials.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Thickness & Material - only when 3D walls visible */}
+          {is3DView && show3DWalls && (
+            <>
+              {/* Default Thickness */}
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Thickness
+                </label>
+                <NumberField
+                  value={config.defaultThickness}
+                  onChange={(v) => setConfig({ defaultThickness: v })}
+                  min={config.minThickness}
+                  max={config.maxThickness}
+                  step={10}
+                  suffix="mm"
+                />
+                <div className="flex flex-wrap gap-1">
+                  {COMMON_THICKNESSES.slice(0, 4).map((t) => (
+                    <button
+                      key={t.value}
+                      onClick={() => setConfig({ defaultThickness: t.value })}
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded border",
+                        config.defaultThickness === t.value
+                          ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                          : "border-border hover:bg-muted",
+                      )}
+                    >
+                      {t.value}mm
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Default Material */}
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Material
+                </label>
+                <select
+                  value={config.defaultMaterialId}
+                  onChange={(e) =>
+                    setConfig({ defaultMaterialId: e.target.value })
+                  }
+                  className="w-full text-xs px-2 py-1.5 border border-border rounded bg-background"
+                >
+                  {materials.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           {/* Apply to All */}
-          <div className="pt-2 border-t border-border space-y-2">
-            <p className="text-xs text-muted-foreground">Apply to all walls:</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setAllWallsHeight(config.defaultHeight)}
-                disabled={wallCount === 0}
-                className="text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Set All Heights
-              </button>
-              <button
-                onClick={() => setAllWallsThickness(config.defaultThickness)}
-                disabled={wallCount === 0}
-                className="text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Set All Thickness
-              </button>
-              <button
-                onClick={() => setAllWallsMaterial(config.defaultMaterialId)}
-                disabled={wallCount === 0}
-                className="col-span-2 text-xs px-2 py-1.5 bg-muted rounded hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Set All Materials
-              </button>
+          {wallCount > 0 && (
+            <div className="pt-2 border-t border-border space-y-2">
+              <p className="text-[10px] text-muted-foreground">
+                Apply to all walls:
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  onClick={() => setAllWallsHeight(config.defaultHeight)}
+                  className="text-[10px] px-2 py-1 bg-muted rounded hover:bg-muted/80"
+                >
+                  Heights
+                </button>
+                {is3DView && show3DWalls && (
+                  <>
+                    <button
+                      onClick={() =>
+                        setAllWallsThickness(config.defaultThickness)
+                      }
+                      className="text-[10px] px-2 py-1 bg-muted rounded hover:bg-muted/80"
+                    >
+                      Thickness
+                    </button>
+                    <button
+                      onClick={() =>
+                        setAllWallsMaterial(config.defaultMaterialId)
+                      }
+                      className="col-span-2 text-[10px] px-2 py-1 bg-muted rounded hover:bg-muted/80"
+                    >
+                      Material
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
-      </Panel>
-
-      {/* Statistics */}
-      {wallCount > 0 && (
-        <Panel title="Statistics" collapsible>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Total Length:</span>
-              <span>{formatLength(stats.totalLength, unitConfig)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Total Area:</span>
-              <span>{(stats.totalArea / 1_000_000).toFixed(2)} m²</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Avg Height:</span>
-              <span>{formatLength(stats.averageHeight, unitConfig)}</span>
-            </div>
-          </div>
-        </Panel>
-      )}
-
-      {/* Selection Actions */}
-      {selectedCount > 0 && (
-        <Panel title={`Selected (${selectedCount})`}>
-          <div className="space-y-2">
-            <button
-              onClick={clearWallSelection}
-              className="w-full text-xs px-2 py-1.5 border border-border rounded hover:bg-muted"
-            >
-              Clear Selection
-            </button>
-          </div>
-        </Panel>
       )}
     </div>
   );

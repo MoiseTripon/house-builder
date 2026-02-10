@@ -8,47 +8,30 @@ import {
   DEFAULT_WALL_MATERIALS,
 } from "@/domain/structure/wallSystem";
 
-/**
- * Individual wall data - linked to a plan edge
- */
 export interface Wall {
   id: string;
   edgeId: string;
-  height: number; // mm - can override global
-  thickness: number; // mm - can override global
+  height: number;
+  thickness: number;
   materialId: string;
-  baseZ: number; // mm - elevation from ground
+  baseZ: number;
 }
 
-/**
- * Wall-specific selection (separate from editor's geometry selection)
- */
 export interface WallSelection {
   wallIds: string[];
   primary: string | null;
 }
 
 interface WallsState {
-  // Wall instances
   walls: Record<string, Wall>;
-
-  // Global configuration
   config: WallSystemConfig;
-
-  // Available materials
   materials: WallMaterial[];
-
-  // Selection state
   selection: WallSelection;
+  show3DWalls: boolean;
 
-  // Visibility
-  wallsVisible: boolean;
-
-  // Actions
-  setWallsVisible: (visible: boolean) => void;
+  setShow3DWalls: (show: boolean) => void;
   setConfig: (config: Partial<WallSystemConfig>) => void;
 
-  // Wall CRUD
   createWallFromEdge: (edgeId: string) => string;
   removeWall: (wallId: string) => void;
   removeWallByEdge: (edgeId: string) => void;
@@ -61,17 +44,15 @@ interface WallsState {
   setWallThickness: (wallId: string, thickness: number) => void;
   setAllWallsThickness: (thickness: number) => void;
   setAllWallsMaterial: (materialId: string) => void;
+  setAllWallsBaseZ: (baseZ: number) => void;
 
-  // Sync with plan edges - fixed version
   syncWithEdges: (edgeIds: string[]) => void;
 
-  // Selection
   selectWall: (wallId: string | null) => void;
   toggleWallSelection: (wallId: string) => void;
   clearWallSelection: () => void;
   selectWallByEdge: (edgeId: string) => void;
 
-  // Queries
   getWallByEdge: (edgeId: string) => Wall | undefined;
   getSelectedWalls: () => Wall[];
 }
@@ -82,17 +63,15 @@ export const useWallsStore = create<WallsState>()(
     config: DEFAULT_WALL_SYSTEM_CONFIG,
     materials: DEFAULT_WALL_MATERIALS,
     selection: { wallIds: [], primary: null },
-    wallsVisible: true,
+    show3DWalls: true,
 
-    setWallsVisible: (visible) => set({ wallsVisible: visible }),
+    setShow3DWalls: (show) => set({ show3DWalls: show }),
 
     setConfig: (partial) =>
       set((s) => ({ config: { ...s.config, ...partial } })),
 
     createWallFromEdge: (edgeId) => {
       const { config, walls } = get();
-
-      // Check if wall already exists for this edge
       const existing = Object.values(walls).find((w) => w.edgeId === edgeId);
       if (existing) return existing.id;
 
@@ -114,9 +93,8 @@ export const useWallsStore = create<WallsState>()(
       const { walls, selection } = get();
       const { [wallId]: removed, ...remaining } = walls;
 
-      if (!removed) return; // Wall doesn't exist, nothing to do
+      if (!removed) return;
 
-      // Update selection if needed
       const newSelection = {
         wallIds: selection.wallIds.filter((id) => id !== wallId),
         primary:
@@ -155,7 +133,6 @@ export const useWallsStore = create<WallsState>()(
       const wall = walls[wallId];
       if (!wall) return;
 
-      // Clamp values
       const clampedUpdates = { ...updates };
       if (updates.height !== undefined) {
         clampedUpdates.height = Math.max(
@@ -170,7 +147,6 @@ export const useWallsStore = create<WallsState>()(
         );
       }
       if (updates.baseZ !== undefined) {
-        // Clamp baseZ to reasonable values (0 to 50000mm = 50m)
         clampedUpdates.baseZ = Math.max(0, Math.min(50000, updates.baseZ));
       }
 
@@ -231,15 +207,25 @@ export const useWallsStore = create<WallsState>()(
       set({ walls: updated });
     },
 
+    setAllWallsBaseZ: (baseZ) => {
+      const { walls } = get();
+      const clampedBaseZ = Math.max(0, Math.min(50000, baseZ));
+
+      const updated: Record<string, Wall> = {};
+      for (const [id, wall] of Object.entries(walls)) {
+        updated[id] = { ...wall, baseZ: clampedBaseZ };
+      }
+
+      set({ walls: updated });
+    },
+
     syncWithEdges: (edgeIds) => {
       const { walls, config } = get();
       const edgeIdSet = new Set(edgeIds);
 
-      // Build new walls record in a single operation
       const newWalls: Record<string, Wall> = {};
       const existingEdgeIds = new Set<string>();
 
-      // Keep walls that still have valid edges
       for (const wall of Object.values(walls)) {
         if (edgeIdSet.has(wall.edgeId)) {
           newWalls[wall.id] = wall;
@@ -247,7 +233,6 @@ export const useWallsStore = create<WallsState>()(
         }
       }
 
-      // Create walls for new edges
       for (const edgeId of edgeIds) {
         if (!existingEdgeIds.has(edgeId)) {
           const id = generateId("wall");
@@ -262,7 +247,6 @@ export const useWallsStore = create<WallsState>()(
         }
       }
 
-      // Update selection to remove any walls that were removed
       const { selection } = get();
       const newWallIds = new Set(Object.keys(newWalls));
       const newSelectedIds = selection.wallIds.filter((id) =>
