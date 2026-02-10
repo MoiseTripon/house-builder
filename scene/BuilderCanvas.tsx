@@ -33,6 +33,7 @@ import {
   interiorAngleAt,
   angleLabelPosition,
 } from "@/domain/geometry/polygon";
+import { WallSolids } from "./objects/WallSolids";
 
 /* ================================================================
    Projection helper: world position → screen pixel
@@ -336,6 +337,7 @@ export function BuilderCanvas() {
         <ambientLight intensity={1} />
         <Grid />
         <PlanLines />
+        <WallSolids />
         <Highlights />
         <AngleArcs />
         <CanvasInteraction />

@@ -6,6 +6,7 @@ import { Panel } from "@/shared/ui/Panel";
 import { NumberField } from "@/shared/ui/NumberField";
 import { vec2 } from "@/domain/geometry/vec2";
 import { cn } from "@/lib/utils";
+import { WallsPanel } from "@/features/walls/ui/WallsPanel";
 
 type ShapeType = "rectangle" | "l-shape" | "u-shape";
 
@@ -340,6 +341,9 @@ export function DrawToolbar() {
           />
         </div>
       </Panel>
+      <div className="pt-3 border-t border-border">
+        <WallsPanel />
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Panel } from "@/shared/ui/Panel";
 import { NumberField } from "@/shared/ui/NumberField";
 import { Vec2, distance } from "@/domain/geometry/vec2";
 import { formatLength } from "@/domain/units/units";
+import { WallsProperties } from "@/features/walls/ui/WallsProperties";
 import {
   polygonArea,
   polygonPerimeter,
@@ -459,6 +460,8 @@ export function PropertiesPanel() {
           </div>
         </Panel>
       )}
+      {/* WALLS PROPERTIES */}
+      <WallsProperties />
     </div>
   );
 }
