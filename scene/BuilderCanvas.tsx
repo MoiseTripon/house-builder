@@ -38,6 +38,7 @@ import {
 } from "@/domain/geometry/polygon";
 import { RoofSolids } from "./objects/RoofSolids";
 import { useUnifiedSelection } from "@/features/editor/model/useUnifiedSelection";
+import { RoofTopologyOverlay } from "./objects/RoofTopologyOverlay";
 
 /* ================================================================
    Plan View Camera Setup
@@ -411,6 +412,7 @@ function SceneContent({ isPlanView }: { isPlanView: boolean }) {
       <PlanLines />
       <WallSolids />
       <RoofSolids />
+      <RoofTopologyOverlay />
       <Highlights />
       {isPlanView && <AngleArcs />}
       {isPlanView && <CanvasInteraction />}

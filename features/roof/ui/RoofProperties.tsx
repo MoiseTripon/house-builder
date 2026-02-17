@@ -510,7 +510,7 @@ export function RoofProperties() {
               >
                 Edit Topology
               </button>
-            ) : (
+            ) : primaryRoof ? (
               <button
                 onClick={() =>
                   useRoofStore.getState().topoResetToPreset(primaryRoof.id)
@@ -519,7 +519,7 @@ export function RoofProperties() {
               >
                 Reset to Preset
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </Panel>
