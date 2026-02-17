@@ -98,7 +98,9 @@ export function RoofPanel() {
 
       {/* stats */}
       <div className="mt-2 rounded bg-slate-800 p-2 text-xs text-slate-400">
-        <div>Roof faces: {stats.count}</div>
+        <div>Roofs: {stats.roofCount}</div>
+        <div>Planes: {stats.planeCount}</div>
+        <div>Total area: {(stats.totalArea / 1_000_000).toFixed(2)} m²</div>
         <div>Avg pitch: {stats.averagePitch.toFixed(1)}°</div>
       </div>
     </div>

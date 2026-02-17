@@ -10,7 +10,7 @@ export interface RoofMaterial {
 export interface RoofSystemConfig {
   defaultRoofType: RoofType;
   defaultPitchDeg: number;
-  defaultOverhang: number; // mm
+  defaultOverhang: number;
   defaultMaterialId: string;
   minPitchDeg: number;
   maxPitchDeg: number;
@@ -33,7 +33,7 @@ export const DEFAULT_ROOF_MATERIALS: RoofMaterial[] = [
 export const DEFAULT_ROOF_SYSTEM_CONFIG: RoofSystemConfig = {
   defaultRoofType: "gable",
   defaultPitchDeg: 30,
-  defaultOverhang: 0, // keep zero for minimal version
+  defaultOverhang: 0,
   defaultMaterialId: "roof-tile-red",
   minPitchDeg: 0,
   maxPitchDeg: 60,

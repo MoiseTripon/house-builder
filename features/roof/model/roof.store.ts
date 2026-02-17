@@ -13,13 +13,14 @@ export interface Roof {
   faceId: string;
   roofType: RoofType;
   pitchDeg: number;
-  overhang: number; // mm
+  overhang: number;
   materialId: string;
-  baseZ: number; // z where the roof starts (= wall-top height)
+  baseZ: number;
 }
 
-export interface RoofSelection {
-  roofIds: string[];
+export interface RoofPlaneSelection {
+  /** Currently selected plane ids (e.g. "roof_xxx_front") */
+  planeIds: string[];
   primary: string | null;
 }
 
@@ -27,7 +28,7 @@ interface RoofState {
   roofs: Record<string, Roof>;
   config: RoofSystemConfig;
   materials: RoofMaterial[];
-  selection: RoofSelection;
+  planeSelection: RoofPlaneSelection;
   show3DRoofs: boolean;
 
   /* global toggles */
@@ -55,14 +56,14 @@ interface RoofState {
     wallTopForFace: (faceId: string) => number,
   ) => void;
 
-  /* selection */
-  selectRoof: (id: string | null) => void;
-  toggleRoofSelection: (id: string) => void;
-  clearRoofSelection: () => void;
-  selectRoofByFace: (faceId: string) => void;
+  /* plane selection */
+  selectPlane: (planeId: string | null) => void;
+  togglePlaneSelection: (planeId: string) => void;
+  clearPlaneSelection: () => void;
 
   /* queries */
   getRoofByFace: (faceId: string) => Roof | undefined;
+  getRoofByPlaneId: (planeId: string) => Roof | undefined;
   getSelectedRoofs: () => Roof[];
 }
 
@@ -71,14 +72,17 @@ export const useRoofStore = create<RoofState>()(
     roofs: {},
     config: ROOF_DEFAULTS.config,
     materials: ROOF_DEFAULTS.materials,
-    selection: { roofIds: [], primary: null },
+    planeSelection: { planeIds: [], primary: null },
     show3DRoofs: ROOF_DEFAULTS.show3DRoofs,
 
     /* ---------- toggles ---------- */
 
     setShow3DRoofs: (v) => set({ show3DRoofs: v }),
 
-    setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
+    setConfig: (patch) =>
+      set((s) => ({
+        config: { ...s.config, ...patch },
+      })),
 
     /* ---------- CRUD ---------- */
 
@@ -103,18 +107,21 @@ export const useRoofStore = create<RoofState>()(
     },
 
     removeRoof: (roofId) => {
-      const { roofs, selection } = get();
+      const { roofs, planeSelection } = get();
       const { [roofId]: _, ...rest } = roofs;
 
-      const newIds = selection.roofIds.filter((id) => id !== roofId);
+      // Clean up plane selection — remove any planes belonging to this roof
+      const newPlaneIds = planeSelection.planeIds.filter(
+        (pid) => !pid.startsWith(roofId),
+      );
       set({
         roofs: rest,
-        selection: {
-          roofIds: newIds,
+        planeSelection: {
+          planeIds: newPlaneIds,
           primary:
-            selection.primary === roofId
-              ? (newIds[0] ?? null)
-              : selection.primary,
+            planeSelection.primary && planeSelection.primary.startsWith(roofId)
+              ? (newPlaneIds[0] ?? null)
+              : planeSelection.primary,
         },
       });
     },
@@ -147,10 +154,11 @@ export const useRoofStore = create<RoofState>()(
     /* ---------- batch ---------- */
 
     setAllRoofsType: (t) => {
-      const updated = { ...get().roofs };
+      const { roofs, config } = get();
+      const updated = { ...roofs };
       for (const id of Object.keys(updated))
         updated[id] = { ...updated[id], roofType: t };
-      set({ roofs: updated });
+      set({ roofs: updated, config: { ...config, defaultRoofType: t } });
     },
 
     setAllRoofsPitch: (deg) => {
@@ -162,7 +170,7 @@ export const useRoofStore = create<RoofState>()(
       const updated = { ...get().roofs };
       for (const id of Object.keys(updated))
         updated[id] = { ...updated[id], pitchDeg: clamped };
-      set({ roofs: updated });
+      set({ roofs: updated, config: { ...config, defaultPitchDeg: clamped } });
     },
 
     setAllRoofsOverhang: (mm) => {
@@ -174,29 +182,33 @@ export const useRoofStore = create<RoofState>()(
       const updated = { ...get().roofs };
       for (const id of Object.keys(updated))
         updated[id] = { ...updated[id], overhang: clamped };
-      set({ roofs: updated });
+      set({
+        roofs: updated,
+        config: { ...config, defaultOverhang: clamped },
+      });
     },
 
     setAllRoofsMaterial: (materialId) => {
       const updated = { ...get().roofs };
       for (const id of Object.keys(updated))
         updated[id] = { ...updated[id], materialId };
-      set({ roofs: updated });
+      set({
+        roofs: updated,
+        config: { ...get().config, defaultMaterialId: materialId },
+      });
     },
 
     /* ---------- sync ---------- */
 
     syncWithFaces: (faceIds, wallTopForFace) => {
-      const { roofs, config, selection } = get();
+      const { roofs, config, planeSelection } = get();
       const faceSet = new Set(faceIds);
 
       const next: Record<string, Roof> = {};
       const seenFaces = new Set<string>();
 
-      // Keep existing roofs whose face still exists
       for (const roof of Object.values(roofs)) {
         if (faceSet.has(roof.faceId)) {
-          // Update baseZ in case wall heights changed
           next[roof.id] = {
             ...roof,
             baseZ: wallTopForFace(roof.faceId),
@@ -205,7 +217,6 @@ export const useRoofStore = create<RoofState>()(
         }
       }
 
-      // Create roofs for new faces
       for (const faceId of faceIds) {
         if (!seenFaces.has(faceId)) {
           const id = generateId("roof");
@@ -221,73 +232,102 @@ export const useRoofStore = create<RoofState>()(
         }
       }
 
-      const nextIds = new Set(Object.keys(next));
-      const newSel = selection.roofIds.filter((id) => nextIds.has(id));
+      // Prune plane selection for removed roofs
+      const nextRoofIds = new Set(Object.keys(next));
+      const validPlaneIds = planeSelection.planeIds.filter((pid) => {
+        // planeId format: "roofId_suffix" - extract roofId
+        const roofId = roofIdFromPlaneId(pid, nextRoofIds);
+        return roofId !== null;
+      });
 
       set({
         roofs: next,
-        selection: {
-          roofIds: newSel,
+        planeSelection: {
+          planeIds: validPlaneIds,
           primary:
-            selection.primary && nextIds.has(selection.primary)
-              ? selection.primary
-              : (newSel[0] ?? null),
+            planeSelection.primary &&
+            roofIdFromPlaneId(planeSelection.primary, nextRoofIds) !== null
+              ? planeSelection.primary
+              : (validPlaneIds[0] ?? null),
         },
       });
     },
 
-    /* ---------- selection ---------- */
+    /* ---------- plane selection ---------- */
 
-    selectRoof: (id) => {
-      if (!id) {
-        set({ selection: { roofIds: [], primary: null } });
+    selectPlane: (planeId) => {
+      if (!planeId) {
+        set({ planeSelection: { planeIds: [], primary: null } });
       } else {
-        set({ selection: { roofIds: [id], primary: id } });
+        set({ planeSelection: { planeIds: [planeId], primary: planeId } });
       }
     },
 
-    toggleRoofSelection: (id) => {
-      const { selection } = get();
-      const has = selection.roofIds.includes(id);
+    togglePlaneSelection: (planeId) => {
+      const { planeSelection } = get();
+      const has = planeSelection.planeIds.includes(planeId);
       if (has) {
-        const newIds = selection.roofIds.filter((x) => x !== id);
+        const newIds = planeSelection.planeIds.filter((x) => x !== planeId);
         set({
-          selection: {
-            roofIds: newIds,
+          planeSelection: {
+            planeIds: newIds,
             primary:
-              selection.primary === id
+              planeSelection.primary === planeId
                 ? (newIds[0] ?? null)
-                : selection.primary,
+                : planeSelection.primary,
           },
         });
       } else {
         set({
-          selection: {
-            roofIds: [...selection.roofIds, id],
-            primary: id,
+          planeSelection: {
+            planeIds: [...planeSelection.planeIds, planeId],
+            primary: planeId,
           },
         });
       }
     },
 
-    clearRoofSelection: () =>
-      set({ selection: { roofIds: [], primary: null } }),
-
-    selectRoofByFace: (faceId) => {
-      const roof = get().getRoofByFace(faceId);
-      if (roof) get().selectRoof(roof.id);
-    },
+    clearPlaneSelection: () =>
+      set({ planeSelection: { planeIds: [], primary: null } }),
 
     /* ---------- queries ---------- */
 
     getRoofByFace: (faceId) =>
       Object.values(get().roofs).find((r) => r.faceId === faceId),
 
+    getRoofByPlaneId: (planeId) => {
+      const roofIds = new Set(Object.keys(get().roofs));
+      const roofId = roofIdFromPlaneId(planeId, roofIds);
+      return roofId ? get().roofs[roofId] : undefined;
+    },
+
     getSelectedRoofs: () => {
-      const { roofs, selection } = get();
-      return selection.roofIds
+      const { roofs, planeSelection } = get();
+      const roofIds = new Set<string>();
+      const allRoofIds = new Set(Object.keys(roofs));
+
+      for (const pid of planeSelection.planeIds) {
+        const rid = roofIdFromPlaneId(pid, allRoofIds);
+        if (rid) roofIds.add(rid);
+      }
+
+      return [...roofIds]
         .map((id) => roofs[id])
         .filter((r): r is Roof => r !== undefined);
     },
   })),
 );
+
+/**
+ * Given a planeId like "roof_abc123_front", extract the roofId "roof_abc123".
+ * We check against known roofIds to handle ids that contain underscores.
+ */
+function roofIdFromPlaneId(
+  planeId: string,
+  knownRoofIds: Set<string>,
+): string | null {
+  for (const rid of knownRoofIds) {
+    if (planeId.startsWith(rid + "_")) return rid;
+  }
+  return null;
+}

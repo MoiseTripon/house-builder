@@ -1,28 +1,36 @@
 import { Vec2 } from "../../geometry/vec2";
 
-export interface RoofGeometry {
+export interface RoofPlaneGeometry {
+  planeId: string;
+  label: string;
   vertices: Float32Array;
   indices: Uint16Array;
   normals: Float32Array;
+  area: number; // in mm²
+  slopeAngleDeg: number;
+}
+
+export interface GableRoofResult {
+  planes: RoofPlaneGeometry[];
 }
 
 /**
  * Generates a simple gable roof over the bounding box of a polygon.
  *
  * The ridge runs along the longer axis of the AABB.
- * Two sloped quads + two triangular gable ends.
+ * Returns individual planes (2 slopes + 2 gable ends) for per-plane selection.
  */
 export function generateGableRoof(
+  roofId: string,
   polygon: Vec2[],
   baseZ: number,
   pitchDeg: number,
   overhang: number,
-): RoofGeometry {
+): GableRoofResult {
   if (polygon.length < 3) {
-    return emptyGeometry();
+    return { planes: [] };
   }
 
-  // Bounding box of the face polygon
   let minX = Infinity,
     maxX = -Infinity,
     minY = Infinity,
@@ -36,217 +44,163 @@ export function generateGableRoof(
 
   const spanX = maxX - minX;
   const spanY = maxY - minY;
-  if (spanX < 1 || spanY < 1) return emptyGeometry();
+  if (spanX < 1 || spanY < 1) return { planes: [] };
 
   const pitchRad = (pitchDeg * Math.PI) / 180;
   const ridgeAlongX = spanX >= spanY;
 
-  // Expand footprint by overhang
   const eMinX = minX - overhang;
   const eMaxX = maxX + overhang;
   const eMinY = minY - overhang;
   const eMaxY = maxY + overhang;
 
-  // Rise is computed from the ORIGINAL span (not the overhang-extended one)
   const originalHalfSpan = ridgeAlongX ? spanY / 2 : spanX / 2;
   const rise = originalHalfSpan * Math.tan(pitchRad);
   const ridgeZ = baseZ + rise;
 
   return ridgeAlongX
-    ? buildAlongX(eMinX, eMaxX, eMinY, eMaxY, baseZ, ridgeZ)
-    : buildAlongY(eMinX, eMaxX, eMinY, eMaxY, baseZ, ridgeZ);
+    ? buildAlongX(roofId, eMinX, eMaxX, eMinY, eMaxY, baseZ, ridgeZ, pitchDeg)
+    : buildAlongY(roofId, eMinX, eMaxX, eMinY, eMaxY, baseZ, ridgeZ, pitchDeg);
 }
 
 /* ---- Ridge along X ---- */
 
 function buildAlongX(
+  roofId: string,
   minX: number,
   maxX: number,
   minY: number,
   maxY: number,
   baseZ: number,
   ridgeZ: number,
-): RoofGeometry {
+  pitchDeg: number,
+): GableRoofResult {
   const midY = (minY + maxY) / 2;
-  const verts: number[] = [];
-  const norms: number[] = [];
-  const idxs: number[] = [];
-  let bi = 0;
+  const planes: RoofPlaneGeometry[] = [];
 
-  /* --- front slope (minY side, normal faces −Y / +Z) --- */
-  const fnorm = faceNormal(
-    [minX, minY, baseZ],
-    [maxX, minY, baseZ],
-    [maxX, midY, ridgeZ],
-  );
-  pushQuad(
-    verts,
-    norms,
-    idxs,
+  // Front slope (minY side)
+  const frontVerts: V3[] = [
     [minX, minY, baseZ],
     [maxX, minY, baseZ],
     [maxX, midY, ridgeZ],
     [minX, midY, ridgeZ],
-    fnorm,
-    bi,
+  ];
+  const fnorm = faceNormal(frontVerts[0], frontVerts[1], frontVerts[2]);
+  planes.push(
+    buildQuadPlane(
+      `${roofId}_front`,
+      "Front Slope",
+      frontVerts,
+      fnorm,
+      pitchDeg,
+    ),
   );
-  bi += 4;
 
-  /* --- back slope (maxY side, normal faces +Y / +Z) --- */
-  const bnorm = faceNormal(
-    [maxX, maxY, baseZ],
-    [minX, maxY, baseZ],
-    [minX, midY, ridgeZ],
-  );
-  pushQuad(
-    verts,
-    norms,
-    idxs,
+  // Back slope (maxY side)
+  const backVerts: V3[] = [
     [maxX, maxY, baseZ],
     [minX, maxY, baseZ],
     [minX, midY, ridgeZ],
     [maxX, midY, ridgeZ],
-    bnorm,
-    bi,
+  ];
+  const bnorm = faceNormal(backVerts[0], backVerts[1], backVerts[2]);
+  planes.push(
+    buildQuadPlane(`${roofId}_back`, "Back Slope", backVerts, bnorm, pitchDeg),
   );
-  bi += 4;
 
-  /* --- left gable triangle (x = minX, normal faces −X) --- */
-  const lnorm = faceNormal(
+  // Left gable triangle (x = minX)
+  const leftVerts: V3[] = [
     [minX, maxY, baseZ],
     [minX, minY, baseZ],
     [minX, midY, ridgeZ],
+  ];
+  const lnorm = faceNormal(leftVerts[0], leftVerts[1], leftVerts[2]);
+  planes.push(
+    buildTriPlane(`${roofId}_left`, "Left Gable", leftVerts, lnorm, 90),
   );
-  pushTri(
-    verts,
-    norms,
-    idxs,
-    [minX, maxY, baseZ],
-    [minX, minY, baseZ],
-    [minX, midY, ridgeZ],
-    lnorm,
-    bi,
-  );
-  bi += 3;
 
-  /* --- right gable triangle (x = maxX, normal faces +X) --- */
-  const rnorm = faceNormal(
+  // Right gable triangle (x = maxX)
+  const rightVerts: V3[] = [
     [maxX, minY, baseZ],
     [maxX, maxY, baseZ],
     [maxX, midY, ridgeZ],
-  );
-  pushTri(
-    verts,
-    norms,
-    idxs,
-    [maxX, minY, baseZ],
-    [maxX, maxY, baseZ],
-    [maxX, midY, ridgeZ],
-    rnorm,
-    bi,
+  ];
+  const rnorm = faceNormal(rightVerts[0], rightVerts[1], rightVerts[2]);
+  planes.push(
+    buildTriPlane(`${roofId}_right`, "Right Gable", rightVerts, rnorm, 90),
   );
 
-  return {
-    vertices: new Float32Array(verts),
-    indices: new Uint16Array(idxs),
-    normals: new Float32Array(norms),
-  };
+  return { planes };
 }
 
 /* ---- Ridge along Y ---- */
 
 function buildAlongY(
+  roofId: string,
   minX: number,
   maxX: number,
   minY: number,
   maxY: number,
   baseZ: number,
   ridgeZ: number,
-): RoofGeometry {
+  pitchDeg: number,
+): GableRoofResult {
   const midX = (minX + maxX) / 2;
-  const verts: number[] = [];
-  const norms: number[] = [];
-  const idxs: number[] = [];
-  let bi = 0;
+  const planes: RoofPlaneGeometry[] = [];
 
-  /* --- left slope (minX side, normal faces −X / +Z) --- */
-  const lnorm = faceNormal(
-    [minX, maxY, baseZ],
-    [minX, minY, baseZ],
-    [midX, minY, ridgeZ],
-  );
-  pushQuad(
-    verts,
-    norms,
-    idxs,
+  // Left slope (minX side)
+  const leftVerts: V3[] = [
     [minX, maxY, baseZ],
     [minX, minY, baseZ],
     [midX, minY, ridgeZ],
     [midX, maxY, ridgeZ],
-    lnorm,
-    bi,
+  ];
+  const lnorm = faceNormal(leftVerts[0], leftVerts[1], leftVerts[2]);
+  planes.push(
+    buildQuadPlane(`${roofId}_left`, "Left Slope", leftVerts, lnorm, pitchDeg),
   );
-  bi += 4;
 
-  /* --- right slope (maxX side, normal faces +X / +Z) --- */
-  const rnorm = faceNormal(
-    [maxX, minY, baseZ],
-    [maxX, maxY, baseZ],
-    [midX, maxY, ridgeZ],
-  );
-  pushQuad(
-    verts,
-    norms,
-    idxs,
+  // Right slope (maxX side)
+  const rightVerts: V3[] = [
     [maxX, minY, baseZ],
     [maxX, maxY, baseZ],
     [midX, maxY, ridgeZ],
     [midX, minY, ridgeZ],
-    rnorm,
-    bi,
+  ];
+  const rnorm = faceNormal(rightVerts[0], rightVerts[1], rightVerts[2]);
+  planes.push(
+    buildQuadPlane(
+      `${roofId}_right`,
+      "Right Slope",
+      rightVerts,
+      rnorm,
+      pitchDeg,
+    ),
   );
-  bi += 4;
 
-  /* --- front gable triangle (y = minY, normal faces −Y) --- */
-  const fnorm = faceNormal(
+  // Front gable triangle (y = minY)
+  const frontVerts: V3[] = [
     [minX, minY, baseZ],
     [maxX, minY, baseZ],
     [midX, minY, ridgeZ],
+  ];
+  const fnorm = faceNormal(frontVerts[0], frontVerts[1], frontVerts[2]);
+  planes.push(
+    buildTriPlane(`${roofId}_front`, "Front Gable", frontVerts, fnorm, 90),
   );
-  pushTri(
-    verts,
-    norms,
-    idxs,
-    [minX, minY, baseZ],
-    [maxX, minY, baseZ],
-    [midX, minY, ridgeZ],
-    fnorm,
-    bi,
-  );
-  bi += 3;
 
-  /* --- back gable triangle (y = maxY, normal faces +Y) --- */
-  const bnorm = faceNormal(
+  // Back gable triangle (y = maxY)
+  const backVerts: V3[] = [
     [maxX, maxY, baseZ],
     [minX, maxY, baseZ],
     [midX, maxY, ridgeZ],
-  );
-  pushTri(
-    verts,
-    norms,
-    idxs,
-    [maxX, maxY, baseZ],
-    [minX, maxY, baseZ],
-    [midX, maxY, ridgeZ],
-    bnorm,
-    bi,
+  ];
+  const bnorm = faceNormal(backVerts[0], backVerts[1], backVerts[2]);
+  planes.push(
+    buildTriPlane(`${roofId}_back`, "Back Gable", backVerts, bnorm, 90),
   );
 
-  return {
-    vertices: new Float32Array(verts),
-    indices: new Uint16Array(idxs),
-    normals: new Float32Array(norms),
-  };
+  return { planes };
 }
 
 /* ---- helpers ---- */
@@ -268,41 +222,121 @@ function faceNormal(a: V3, b: V3, c: V3): V3 {
   return [nx / len, ny / len, nz / len];
 }
 
-function pushQuad(
-  verts: number[],
-  norms: number[],
-  idxs: number[],
-  a: V3,
-  b: V3,
-  c: V3,
-  d: V3,
-  n: V3,
-  base: number,
-) {
-  verts.push(...a, ...b, ...c, ...d);
-  for (let i = 0; i < 4; i++) norms.push(...n);
-  idxs.push(base, base + 1, base + 2, base, base + 2, base + 3);
+function triangleArea3D(a: V3, b: V3, c: V3): number {
+  const e1x = b[0] - a[0],
+    e1y = b[1] - a[1],
+    e1z = b[2] - a[2];
+  const e2x = c[0] - a[0],
+    e2y = c[1] - a[1],
+    e2z = c[2] - a[2];
+  const cx = e1y * e2z - e1z * e2y;
+  const cy = e1z * e2x - e1x * e2z;
+  const cz = e1x * e2y - e1y * e2x;
+  return Math.sqrt(cx * cx + cy * cy + cz * cz) / 2;
 }
 
-function pushTri(
-  verts: number[],
-  norms: number[],
-  idxs: number[],
-  a: V3,
-  b: V3,
-  c: V3,
-  n: V3,
-  base: number,
-) {
-  verts.push(...a, ...b, ...c);
-  for (let i = 0; i < 3; i++) norms.push(...n);
-  idxs.push(base, base + 1, base + 2);
-}
+function buildQuadPlane(
+  planeId: string,
+  label: string,
+  corners: V3[],
+  normal: V3,
+  slopeAngleDeg: number,
+): RoofPlaneGeometry {
+  const verts: number[] = [];
+  const norms: number[] = [];
+  const idxs: number[] = [];
 
-function emptyGeometry(): RoofGeometry {
+  for (const c of corners) verts.push(...c);
+  for (let i = 0; i < 4; i++) norms.push(...normal);
+  idxs.push(0, 1, 2, 0, 2, 3);
+
+  const area =
+    triangleArea3D(corners[0], corners[1], corners[2]) +
+    triangleArea3D(corners[0], corners[2], corners[3]);
+
   return {
-    vertices: new Float32Array(0),
-    indices: new Uint16Array(0),
-    normals: new Float32Array(0),
+    planeId,
+    label,
+    vertices: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+    normals: new Float32Array(norms),
+    area,
+    slopeAngleDeg,
+  };
+}
+
+function buildTriPlane(
+  planeId: string,
+  label: string,
+  corners: V3[],
+  normal: V3,
+  slopeAngleDeg: number,
+): RoofPlaneGeometry {
+  const verts: number[] = [];
+  const norms: number[] = [];
+  const idxs: number[] = [];
+
+  for (const c of corners) verts.push(...c);
+  for (let i = 0; i < 3; i++) norms.push(...normal);
+  idxs.push(0, 1, 2);
+
+  const area = triangleArea3D(corners[0], corners[1], corners[2]);
+
+  return {
+    planeId,
+    label,
+    vertices: new Float32Array(verts),
+    indices: new Uint16Array(idxs),
+    normals: new Float32Array(norms),
+    area,
+    slopeAngleDeg,
+  };
+}
+
+/**
+ * Generate a flat roof as a single plane.
+ */
+export function generateFlatRoofPlanes(
+  roofId: string,
+  polygon: Vec2[],
+  baseZ: number,
+): GableRoofResult {
+  if (polygon.length < 3) return { planes: [] };
+
+  const verts: number[] = [];
+  const norms: number[] = [];
+  const idxs: number[] = [];
+
+  for (const p of polygon) {
+    verts.push(p.x, p.y, baseZ);
+    norms.push(0, 0, 1);
+  }
+
+  for (let i = 1; i < polygon.length - 1; i++) {
+    idxs.push(0, i, i + 1);
+  }
+
+  // Calculate area using shoelace in 2D (flat roof so same as 3D area)
+  let area = 0;
+  const n = polygon.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += polygon[i].x * polygon[j].y;
+    area -= polygon[j].x * polygon[i].y;
+  }
+  area = Math.abs(area) / 2;
+
+  return {
+    planes: [
+      {
+        planeId: `${roofId}_flat`,
+        label: "Flat Roof",
+        vertices: new Float32Array(verts),
+        indices: new Uint16Array(idxs),
+        normals: new Float32Array(norms),
+        area,
+        slopeAngleDeg: 0,
+      },
+    ],
   };
 }

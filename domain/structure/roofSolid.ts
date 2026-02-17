@@ -1,19 +1,22 @@
 import { Vec2 } from "../geometry/vec2";
 import { RoofType } from "./roofSystem";
-import { generateGableRoof, RoofGeometry } from "./roofTypes/gable";
+import {
+  generateGableRoof,
+  generateFlatRoofPlanes,
+  RoofPlaneGeometry,
+  GableRoofResult,
+} from "./roofTypes/gable";
 
 export interface RoofSolid {
   roofId: string;
   faceId: string;
   roofType: RoofType;
-  vertices: Float32Array;
-  indices: Uint16Array;
-  normals: Float32Array;
-  ridgeHeight: number; // height above baseZ
+  planes: RoofPlaneGeometry[];
+  ridgeHeight: number;
 }
 
 /**
- * Generate the 3-D solid for one roof piece.
+ * Generate the 3-D solid for one roof piece, decomposed into planes.
  */
 export function generateRoofSolid(
   roofId: string,
@@ -24,14 +27,13 @@ export function generateRoofSolid(
   pitchDeg: number,
   overhang: number,
 ): RoofSolid {
-  let geometry: RoofGeometry;
+  let result: GableRoofResult;
   let ridgeHeight = 0;
 
   switch (roofType) {
     case "gable": {
-      geometry = generateGableRoof(polygon, baseZ, pitchDeg, overhang);
+      result = generateGableRoof(roofId, polygon, baseZ, pitchDeg, overhang);
 
-      // Compute ridge height for metadata
       let minX = Infinity,
         maxX = -Infinity,
         minY = Infinity,
@@ -48,7 +50,7 @@ export function generateRoofSolid(
     }
     case "flat":
     default:
-      geometry = generateFlatRoof(polygon, baseZ);
+      result = generateFlatRoofPlanes(roofId, polygon, baseZ);
       break;
   }
 
@@ -56,41 +58,7 @@ export function generateRoofSolid(
     roofId,
     faceId,
     roofType,
-    vertices: geometry.vertices,
-    indices: geometry.indices,
-    normals: geometry.normals,
+    planes: result.planes,
     ridgeHeight,
-  };
-}
-
-/* ---- flat roof: simple fan triangulation at baseZ ---- */
-
-function generateFlatRoof(polygon: Vec2[], baseZ: number): RoofGeometry {
-  if (polygon.length < 3) {
-    return {
-      vertices: new Float32Array(0),
-      indices: new Uint16Array(0),
-      normals: new Float32Array(0),
-    };
-  }
-
-  const verts: number[] = [];
-  const norms: number[] = [];
-  const idxs: number[] = [];
-
-  for (const p of polygon) {
-    verts.push(p.x, p.y, baseZ);
-    norms.push(0, 0, 1);
-  }
-
-  // Fan triangulation from vertex 0
-  for (let i = 1; i < polygon.length - 1; i++) {
-    idxs.push(0, i, i + 1);
-  }
-
-  return {
-    vertices: new Float32Array(verts),
-    indices: new Uint16Array(idxs),
-    normals: new Float32Array(norms),
   };
 }

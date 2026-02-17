@@ -7,48 +7,34 @@ import { useEditorStore } from "@/features/editor/model/editor.store";
 import { useRoofStore } from "@/features/roof/model/roof.store";
 import {
   useRoofSync,
-  useRoofSolidsWithMaterials,
+  useRoofPlanesWithMaterials,
+  RoofPlaneRenderData,
 } from "@/features/roof/model/roof.selectors";
 
 /* ================================================================
-   Single roof mesh
+   Single roof plane mesh
    ================================================================ */
 
-interface RoofMeshProps {
-  vertices: Float32Array;
-  indices: Uint16Array;
-  normals: Float32Array;
-  color: string;
-  roughness: number;
-  isSelected: boolean;
-  onClick?: (e: ThreeEvent<MouseEvent>) => void;
-  onPointerOver?: (e: ThreeEvent<PointerEvent>) => void;
-  onPointerOut?: (e: ThreeEvent<PointerEvent>) => void;
+interface RoofPlaneMeshProps {
+  data: RoofPlaneRenderData;
+  onClick: (e: ThreeEvent<MouseEvent>) => void;
 }
 
-function RoofMesh({
-  vertices,
-  indices,
-  normals,
-  color,
-  roughness,
-  isSelected,
-  onClick,
-  onPointerOver,
-  onPointerOut,
-}: RoofMeshProps) {
+function RoofPlaneMesh({ data, onClick }: RoofPlaneMeshProps) {
+  const { plane, material, isSelected } = data;
+
   const geometry = useMemo(() => {
-    if (vertices.length === 0) return null;
+    if (plane.vertices.length === 0) return null;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-    geo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.setAttribute("position", new THREE.BufferAttribute(plane.vertices, 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(plane.normals, 3));
+    geo.setIndex(new THREE.BufferAttribute(plane.indices, 1));
     return geo;
-  }, [vertices, indices, normals]);
+  }, [plane.vertices, plane.indices, plane.normals]);
 
   const displayColor = useMemo(
-    () => (isSelected ? "#60a5fa" : color),
-    [color, isSelected],
+    () => (isSelected ? "#60a5fa" : material.color),
+    [material.color, isSelected],
   );
 
   const emissive = useMemo(
@@ -62,12 +48,17 @@ function RoofMesh({
     <mesh
       geometry={geometry}
       onClick={onClick}
-      onPointerOver={onPointerOver}
-      onPointerOut={onPointerOut}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "default";
+      }}
     >
       <meshStandardMaterial
         color={displayColor}
-        roughness={roughness}
+        roughness={material.roughness}
         metalness={0.1}
         emissive={emissive}
         emissiveIntensity={isSelected ? 0.3 : 0}
@@ -82,46 +73,32 @@ function RoofMesh({
    ================================================================ */
 
 export function RoofSolids() {
-  /* keep roofs in sync with plan faces + wall heights */
   useRoofSync();
 
   const viewMode = useEditorStore((s) => s.viewMode);
   const show3DRoofs = useRoofStore((s) => s.show3DRoofs);
-  const selectRoof = useRoofStore((s) => s.selectRoof);
-  const toggleRoofSelection = useRoofStore((s) => s.toggleRoofSelection);
+  const selectPlane = useRoofStore((s) => s.selectPlane);
+  const togglePlaneSelection = useRoofStore((s) => s.togglePlaneSelection);
 
-  const roofData = useRoofSolidsWithMaterials();
+  const planeData = useRoofPlanesWithMaterials();
 
-  // Nothing to render in plan view or when hidden
-  if (viewMode === "plan" || !show3DRoofs || roofData.length === 0) {
+  if (viewMode === "plan" || !show3DRoofs || planeData.length === 0) {
     return null;
   }
 
   return (
     <group name="roofs">
-      {roofData.map(({ solid, roof, material, isSelected }) => (
-        <RoofMesh
-          key={solid.roofId}
-          vertices={solid.vertices}
-          indices={solid.indices}
-          normals={solid.normals}
-          color={material.color}
-          roughness={material.roughness}
-          isSelected={isSelected}
+      {planeData.map((data) => (
+        <RoofPlaneMesh
+          key={data.plane.planeId}
+          data={data}
           onClick={(e) => {
             e.stopPropagation();
             if (e.nativeEvent.shiftKey) {
-              toggleRoofSelection(roof.id);
+              togglePlaneSelection(data.plane.planeId);
             } else {
-              selectRoof(roof.id);
+              selectPlane(data.plane.planeId);
             }
-          }}
-          onPointerOver={(e) => {
-            e.stopPropagation();
-            document.body.style.cursor = "pointer";
-          }}
-          onPointerOut={() => {
-            document.body.style.cursor = "default";
           }}
         />
       ))}

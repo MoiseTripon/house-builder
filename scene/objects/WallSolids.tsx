@@ -93,7 +93,6 @@ function WallPlanes() {
 
         const isSelected = selection.wallIds.includes(wall.id);
 
-        // Create a plane from base to top of wall
         const start = startV.position;
         const end = endV.position;
         const height = wall.height;
@@ -204,17 +203,14 @@ export function WallSolids() {
 
   const wallData = useWallSolidsWithMaterials();
 
-  // In plan view, don't render anything (PlanLines handles it)
   if (viewMode === "plan") {
     return null;
   }
 
-  // In 3D view without 3D walls enabled, show flat planes
   if (!show3DWalls) {
     return <WallPlanes />;
   }
 
-  // Full 3D walls
   if (wallData.length === 0) {
     return null;
   }

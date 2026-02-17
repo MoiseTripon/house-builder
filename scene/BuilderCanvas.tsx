@@ -37,9 +37,10 @@ import {
   angleLabelPosition,
 } from "@/domain/geometry/polygon";
 import { RoofSolids } from "./objects/RoofSolids";
+import { useUnifiedSelection } from "@/features/editor/model/useUnifiedSelection";
 
 /* ================================================================
-   Plan View Camera Setup - ensures proper top-down view
+   Plan View Camera Setup
    ================================================================ */
 function PlanViewCamera() {
   const { camera, gl } = useThree();
@@ -47,7 +48,6 @@ function PlanViewCamera() {
   const setCamera = useEditorStore((s) => s.setCamera);
   const controlsRef = useRef<any>(null);
 
-  // Initial setup for plan view
   useEffect(() => {
     camera.position.set(cameraState.x, cameraState.y, 1000);
     camera.up.set(0, 1, 0);
@@ -88,7 +88,6 @@ function ThreeDViewCamera() {
   const cameraState = useEditorStore((s) => s.camera);
   const setCamera = useEditorStore((s) => s.setCamera);
 
-  // Initial setup for 3D view
   useEffect(() => {
     const dist = cameraState.distance;
     const x =
@@ -399,7 +398,7 @@ function LabelsOverlay({ width, height }: { width: number; height: number }) {
 }
 
 /* ================================================================
-   Scene Content - separated to handle view mode switching
+   Scene Content
    ================================================================ */
 function SceneContent({ isPlanView }: { isPlanView: boolean }) {
   return (
@@ -430,6 +429,9 @@ export function BuilderCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 });
 
+  // Unified selection: wall ↔ roof plane mutual exclusion
+  useUnifiedSelection();
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -448,7 +450,6 @@ export function BuilderCanvas() {
 
   const isPlanView = viewMode === "plan";
 
-  // Calculate initial camera position based on view
   const cameraPosition = useMemo((): [number, number, number] => {
     if (isPlanView) {
       return [camera.x, camera.y, 1000];
@@ -466,8 +467,6 @@ export function BuilderCanvas() {
     return [x, y, Math.max(z, 100)];
   }, [camera, isPlanView]);
 
-  // Key forces re-mount of Canvas when view mode changes
-  // This ensures clean camera state
   const canvasKey = `canvas-${viewMode}`;
 
   return (
