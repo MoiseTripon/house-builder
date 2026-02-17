@@ -6,6 +6,11 @@ import {
   RoofSystemConfig,
   RoofMaterial,
 } from "@/domain/structure/roofSystem";
+import {
+  EdgeOverhangs,
+  defaultEdgeOverhangs,
+  RoofSide,
+} from "@/domain/structure/roofTypes/common";
 import { ROOF_DEFAULTS } from "./roof.defaults";
 
 export interface Roof {
@@ -13,13 +18,14 @@ export interface Roof {
   faceId: string;
   roofType: RoofType;
   pitchDeg: number;
-  overhang: number;
+  lowerPitchDeg: number;
+  edgeOverhangs: EdgeOverhangs;
+  ridgeOffset: number;
   materialId: string;
   baseZ: number;
 }
 
 export interface RoofPlaneSelection {
-  /** Currently selected plane ids (e.g. "roof_xxx_front") */
   planeIds: string[];
   primary: string | null;
 }
@@ -31,7 +37,7 @@ interface RoofState {
   planeSelection: RoofPlaneSelection;
   show3DRoofs: boolean;
 
-  /* global toggles */
+  /* toggles */
   setShow3DRoofs: (v: boolean) => void;
   setConfig: (patch: Partial<RoofSystemConfig>) => void;
 
@@ -43,20 +49,23 @@ interface RoofState {
     roofId: string,
     updates: Partial<Omit<Roof, "id" | "faceId">>,
   ) => void;
+  setEdgeOverhang: (roofId: string, side: RoofSide, value: number) => void;
 
   /* batch */
   setAllRoofsType: (t: RoofType) => void;
   setAllRoofsPitch: (deg: number) => void;
+  setAllRoofsLowerPitch: (deg: number) => void;
   setAllRoofsOverhang: (mm: number) => void;
   setAllRoofsMaterial: (id: string) => void;
+  setAllRoofsRidgeOffset: (mm: number) => void;
 
-  /* sync with plan faces */
+  /* sync */
   syncWithFaces: (
     faceIds: string[],
     wallTopForFace: (faceId: string) => number,
   ) => void;
 
-  /* plane selection */
+  /* selection */
   selectPlane: (planeId: string | null) => void;
   togglePlaneSelection: (planeId: string) => void;
   clearPlaneSelection: () => void;
@@ -75,16 +84,13 @@ export const useRoofStore = create<RoofState>()(
     planeSelection: { planeIds: [], primary: null },
     show3DRoofs: ROOF_DEFAULTS.show3DRoofs,
 
-    /* ---------- toggles ---------- */
+    /* ───── toggles ───── */
 
     setShow3DRoofs: (v) => set({ show3DRoofs: v }),
 
-    setConfig: (patch) =>
-      set((s) => ({
-        config: { ...s.config, ...patch },
-      })),
+    setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
 
-    /* ---------- CRUD ---------- */
+    /* ───── CRUD ───── */
 
     createRoofFromFace: (faceId, wallTopZ) => {
       const { config, roofs } = get();
@@ -97,11 +103,12 @@ export const useRoofStore = create<RoofState>()(
         faceId,
         roofType: config.defaultRoofType,
         pitchDeg: config.defaultPitchDeg,
-        overhang: config.defaultOverhang,
+        lowerPitchDeg: config.defaultLowerPitchDeg,
+        edgeOverhangs: defaultEdgeOverhangs(config.defaultOverhang),
+        ridgeOffset: 0,
         materialId: config.defaultMaterialId,
         baseZ: wallTopZ,
       };
-
       set({ roofs: { ...roofs, [id]: roof } });
       return id;
     },
@@ -109,8 +116,6 @@ export const useRoofStore = create<RoofState>()(
     removeRoof: (roofId) => {
       const { roofs, planeSelection } = get();
       const { [roofId]: _, ...rest } = roofs;
-
-      // Clean up plane selection — remove any planes belonging to this roof
       const newPlaneIds = planeSelection.planeIds.filter(
         (pid) => !pid.startsWith(roofId),
       );
@@ -118,10 +123,9 @@ export const useRoofStore = create<RoofState>()(
         roofs: rest,
         planeSelection: {
           planeIds: newPlaneIds,
-          primary:
-            planeSelection.primary && planeSelection.primary.startsWith(roofId)
-              ? (newPlaneIds[0] ?? null)
-              : planeSelection.primary,
+          primary: planeSelection.primary?.startsWith(roofId)
+            ? (newPlaneIds[0] ?? null)
+            : planeSelection.primary,
         },
       });
     },
@@ -136,22 +140,66 @@ export const useRoofStore = create<RoofState>()(
       const roof = roofs[roofId];
       if (!roof) return;
 
-      const clamped = { ...updates };
-      if (clamped.pitchDeg !== undefined)
-        clamped.pitchDeg = Math.max(
-          config.minPitchDeg,
-          Math.min(config.maxPitchDeg, clamped.pitchDeg),
+      const c = { ...updates };
+      if (c.pitchDeg !== undefined)
+        c.pitchDeg = clamp(c.pitchDeg, config.minPitchDeg, config.maxPitchDeg);
+      if (c.lowerPitchDeg !== undefined)
+        c.lowerPitchDeg = clamp(
+          c.lowerPitchDeg,
+          config.minLowerPitchDeg,
+          config.maxLowerPitchDeg,
         );
-      if (clamped.overhang !== undefined)
-        clamped.overhang = Math.max(
-          config.minOverhang,
-          Math.min(config.maxOverhang, clamped.overhang),
+      if (c.ridgeOffset !== undefined)
+        c.ridgeOffset = clamp(
+          c.ridgeOffset,
+          -config.maxRidgeOffset,
+          config.maxRidgeOffset,
         );
+      if (c.edgeOverhangs) {
+        c.edgeOverhangs = {
+          front: clamp(
+            c.edgeOverhangs.front,
+            config.minOverhang,
+            config.maxOverhang,
+          ),
+          back: clamp(
+            c.edgeOverhangs.back,
+            config.minOverhang,
+            config.maxOverhang,
+          ),
+          left: clamp(
+            c.edgeOverhangs.left,
+            config.minOverhang,
+            config.maxOverhang,
+          ),
+          right: clamp(
+            c.edgeOverhangs.right,
+            config.minOverhang,
+            config.maxOverhang,
+          ),
+        };
+      }
 
-      set({ roofs: { ...roofs, [roofId]: { ...roof, ...clamped } } });
+      set({ roofs: { ...roofs, [roofId]: { ...roof, ...c } } });
     },
 
-    /* ---------- batch ---------- */
+    setEdgeOverhang: (roofId, side, value) => {
+      const { roofs, config } = get();
+      const roof = roofs[roofId];
+      if (!roof) return;
+      const clamped = clamp(value, config.minOverhang, config.maxOverhang);
+      set({
+        roofs: {
+          ...roofs,
+          [roofId]: {
+            ...roof,
+            edgeOverhangs: { ...roof.edgeOverhangs, [side]: clamped },
+          },
+        },
+      });
+    },
+
+    /* ───── batch ───── */
 
     setAllRoofsType: (t) => {
       const { roofs, config } = get();
@@ -163,29 +211,32 @@ export const useRoofStore = create<RoofState>()(
 
     setAllRoofsPitch: (deg) => {
       const { config } = get();
-      const clamped = Math.max(
-        config.minPitchDeg,
-        Math.min(config.maxPitchDeg, deg),
-      );
+      const v = clamp(deg, config.minPitchDeg, config.maxPitchDeg);
       const updated = { ...get().roofs };
       for (const id of Object.keys(updated))
-        updated[id] = { ...updated[id], pitchDeg: clamped };
-      set({ roofs: updated, config: { ...config, defaultPitchDeg: clamped } });
+        updated[id] = { ...updated[id], pitchDeg: v };
+      set({ roofs: updated, config: { ...config, defaultPitchDeg: v } });
+    },
+
+    setAllRoofsLowerPitch: (deg) => {
+      const { config } = get();
+      const v = clamp(deg, config.minLowerPitchDeg, config.maxLowerPitchDeg);
+      const updated = { ...get().roofs };
+      for (const id of Object.keys(updated))
+        updated[id] = { ...updated[id], lowerPitchDeg: v };
+      set({ roofs: updated, config: { ...config, defaultLowerPitchDeg: v } });
     },
 
     setAllRoofsOverhang: (mm) => {
       const { config } = get();
-      const clamped = Math.max(
-        config.minOverhang,
-        Math.min(config.maxOverhang, mm),
-      );
+      const v = clamp(mm, config.minOverhang, config.maxOverhang);
       const updated = { ...get().roofs };
       for (const id of Object.keys(updated))
-        updated[id] = { ...updated[id], overhang: clamped };
-      set({
-        roofs: updated,
-        config: { ...config, defaultOverhang: clamped },
-      });
+        updated[id] = {
+          ...updated[id],
+          edgeOverhangs: defaultEdgeOverhangs(v),
+        };
+      set({ roofs: updated, config: { ...config, defaultOverhang: v } });
     },
 
     setAllRoofsMaterial: (materialId) => {
@@ -198,21 +249,26 @@ export const useRoofStore = create<RoofState>()(
       });
     },
 
-    /* ---------- sync ---------- */
+    setAllRoofsRidgeOffset: (mm) => {
+      const { config } = get();
+      const v = clamp(mm, -config.maxRidgeOffset, config.maxRidgeOffset);
+      const updated = { ...get().roofs };
+      for (const id of Object.keys(updated))
+        updated[id] = { ...updated[id], ridgeOffset: v };
+      set({ roofs: updated });
+    },
+
+    /* ───── sync ───── */
 
     syncWithFaces: (faceIds, wallTopForFace) => {
       const { roofs, config, planeSelection } = get();
       const faceSet = new Set(faceIds);
-
       const next: Record<string, Roof> = {};
       const seenFaces = new Set<string>();
 
       for (const roof of Object.values(roofs)) {
         if (faceSet.has(roof.faceId)) {
-          next[roof.id] = {
-            ...roof,
-            baseZ: wallTopForFace(roof.faceId),
-          };
+          next[roof.id] = { ...roof, baseZ: wallTopForFace(roof.faceId) };
           seenFaces.add(roof.faceId);
         }
       }
@@ -225,35 +281,33 @@ export const useRoofStore = create<RoofState>()(
             faceId,
             roofType: config.defaultRoofType,
             pitchDeg: config.defaultPitchDeg,
-            overhang: config.defaultOverhang,
+            lowerPitchDeg: config.defaultLowerPitchDeg,
+            edgeOverhangs: defaultEdgeOverhangs(config.defaultOverhang),
+            ridgeOffset: 0,
             materialId: config.defaultMaterialId,
             baseZ: wallTopForFace(faceId),
           };
         }
       }
 
-      // Prune plane selection for removed roofs
-      const nextRoofIds = new Set(Object.keys(next));
-      const validPlaneIds = planeSelection.planeIds.filter((pid) => {
-        // planeId format: "roofId_suffix" - extract roofId
-        const roofId = roofIdFromPlaneId(pid, nextRoofIds);
-        return roofId !== null;
-      });
-
+      const nextIds = new Set(Object.keys(next));
+      const validPlaneIds = planeSelection.planeIds.filter(
+        (pid) => roofIdFromPlaneId(pid, nextIds) !== null,
+      );
       set({
         roofs: next,
         planeSelection: {
           planeIds: validPlaneIds,
           primary:
             planeSelection.primary &&
-            roofIdFromPlaneId(planeSelection.primary, nextRoofIds) !== null
+            roofIdFromPlaneId(planeSelection.primary, nextIds) !== null
               ? planeSelection.primary
               : (validPlaneIds[0] ?? null),
         },
       });
     },
 
-    /* ---------- plane selection ---------- */
+    /* ───── selection ───── */
 
     selectPlane: (planeId) => {
       if (!planeId) {
@@ -267,13 +321,13 @@ export const useRoofStore = create<RoofState>()(
       const { planeSelection } = get();
       const has = planeSelection.planeIds.includes(planeId);
       if (has) {
-        const newIds = planeSelection.planeIds.filter((x) => x !== planeId);
+        const ids = planeSelection.planeIds.filter((x) => x !== planeId);
         set({
           planeSelection: {
-            planeIds: newIds,
+            planeIds: ids,
             primary:
               planeSelection.primary === planeId
-                ? (newIds[0] ?? null)
+                ? (ids[0] ?? null)
                 : planeSelection.primary,
           },
         });
@@ -290,38 +344,36 @@ export const useRoofStore = create<RoofState>()(
     clearPlaneSelection: () =>
       set({ planeSelection: { planeIds: [], primary: null } }),
 
-    /* ---------- queries ---------- */
+    /* ───── queries ───── */
 
     getRoofByFace: (faceId) =>
       Object.values(get().roofs).find((r) => r.faceId === faceId),
 
     getRoofByPlaneId: (planeId) => {
-      const roofIds = new Set(Object.keys(get().roofs));
-      const roofId = roofIdFromPlaneId(planeId, roofIds);
-      return roofId ? get().roofs[roofId] : undefined;
+      const ids = new Set(Object.keys(get().roofs));
+      const rid = roofIdFromPlaneId(planeId, ids);
+      return rid ? get().roofs[rid] : undefined;
     },
 
     getSelectedRoofs: () => {
       const { roofs, planeSelection } = get();
-      const roofIds = new Set<string>();
+      const ids = new Set<string>();
       const allRoofIds = new Set(Object.keys(roofs));
-
       for (const pid of planeSelection.planeIds) {
         const rid = roofIdFromPlaneId(pid, allRoofIds);
-        if (rid) roofIds.add(rid);
+        if (rid) ids.add(rid);
       }
-
-      return [...roofIds]
-        .map((id) => roofs[id])
-        .filter((r): r is Roof => r !== undefined);
+      return [...ids].map((id) => roofs[id]).filter((r): r is Roof => !!r);
     },
   })),
 );
 
-/**
- * Given a planeId like "roof_abc123_front", extract the roofId "roof_abc123".
- * We check against known roofIds to handle ids that contain underscores.
- */
+/* ─── helpers ─── */
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
 function roofIdFromPlaneId(
   planeId: string,
   knownRoofIds: Set<string>,

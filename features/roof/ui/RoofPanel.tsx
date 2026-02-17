@@ -1,23 +1,23 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useEditorStore } from "@/features/editor/model/editor.store";
-import { useWallsStore } from "@/features/walls/model/walls.store";
 import { useRoofStore } from "../model/roof.store";
 import { useRoofStats } from "../model/roof.selectors";
-import { COMMON_PITCHES, COMMON_OVERHANGS } from "../model/roof.defaults";
+import {
+  COMMON_PITCHES,
+  COMMON_LOWER_PITCHES,
+  COMMON_OVERHANGS,
+} from "../model/roof.defaults";
 import { NumberField } from "@/shared/ui/NumberField";
 import { RoofType } from "@/domain/structure/roofSystem";
 import { cn } from "@/lib/utils";
 
-/* ------------------------------------------------------------------ */
-/*  Roof type thumbnails (mirrors Quick Shapes approach)               */
-/* ------------------------------------------------------------------ */
+/* ────────── Roof type thumbnails ────────── */
 
 interface RoofTypeDef {
   type: RoofType;
   label: string;
-  /** Simple SVG path data drawn inside a 48×48 box */
   pathFn: (s: number) => string;
 }
 
@@ -25,21 +25,42 @@ const ROOF_TYPES: RoofTypeDef[] = [
   {
     type: "flat",
     label: "Flat",
-    pathFn: (s) => {
-      // flat rectangle at the top
-      const y = s * 0.45;
-      return `M${s * 0.1},${y} L${s * 0.9},${y} L${s * 0.9},${s * 0.55} L${s * 0.1},${s * 0.55} Z`;
-    },
+    pathFn: (s) =>
+      `M${s * 0.1},${s * 0.42} L${s * 0.9},${s * 0.42} L${s * 0.9},${s * 0.52} L${s * 0.1},${s * 0.52} Z`,
+  },
+  {
+    type: "shed",
+    label: "Shed",
+    pathFn: (s) =>
+      `M${s * 0.1},${s * 0.2} L${s * 0.9},${s * 0.5} L${s * 0.9},${s * 0.55} L${s * 0.1},${s * 0.55} Z`,
   },
   {
     type: "gable",
     label: "Gable",
-    pathFn: (s) => {
-      // classic triangle on a rectangle
-      return `M${s * 0.1},${s * 0.55} L${s * 0.5},${s * 0.15} L${s * 0.9},${s * 0.55} Z`;
-    },
+    pathFn: (s) =>
+      `M${s * 0.1},${s * 0.55} L${s * 0.5},${s * 0.15} L${s * 0.9},${s * 0.55} Z`,
+  },
+  {
+    type: "hip",
+    label: "Hip",
+    pathFn: (s) =>
+      `M${s * 0.1},${s * 0.55} L${s * 0.3},${s * 0.2} L${s * 0.7},${s * 0.2} L${s * 0.9},${s * 0.55} Z`,
+  },
+  {
+    type: "gambrel",
+    label: "Gambrel",
+    pathFn: (s) =>
+      `M${s * 0.1},${s * 0.55} L${s * 0.25},${s * 0.3} L${s * 0.5},${s * 0.15} L${s * 0.75},${s * 0.3} L${s * 0.9},${s * 0.55} Z`,
+  },
+  {
+    type: "mansard",
+    label: "Mansard",
+    pathFn: (s) =>
+      `M${s * 0.1},${s * 0.55} L${s * 0.2},${s * 0.28} L${s * 0.35},${s * 0.2} L${s * 0.65},${s * 0.2} L${s * 0.8},${s * 0.28} L${s * 0.9},${s * 0.55} Z`,
   },
 ];
+
+const NEEDS_LOWER_PITCH: RoofType[] = ["gambrel", "mansard"];
 
 function RoofTypeThumbnail({
   def,
@@ -64,7 +85,6 @@ function RoofTypeThumbnail({
       )}
     >
       <svg width={s} height={s} className="flex-shrink-0">
-        {/* base "wall" outline */}
         <rect
           x={s * 0.1}
           y={s * 0.55}
@@ -96,12 +116,9 @@ function RoofTypeThumbnail({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Main panel                                                         */
-/* ------------------------------------------------------------------ */
+/* ────────── Panel ────────── */
 
 export function RoofPanel() {
-  const plan = useEditorStore((s) => s.plan);
   const viewMode = useEditorStore((s) => s.viewMode);
 
   const roofs = useRoofStore((s) => s.roofs);
@@ -114,17 +131,19 @@ export function RoofPanel() {
   const setConfig = useRoofStore((s) => s.setConfig);
   const setAllRoofsType = useRoofStore((s) => s.setAllRoofsType);
   const setAllRoofsPitch = useRoofStore((s) => s.setAllRoofsPitch);
+  const setAllRoofsLowerPitch = useRoofStore((s) => s.setAllRoofsLowerPitch);
   const setAllRoofsOverhang = useRoofStore((s) => s.setAllRoofsOverhang);
   const setAllRoofsMaterial = useRoofStore((s) => s.setAllRoofsMaterial);
+  const setAllRoofsRidgeOffset = useRoofStore((s) => s.setAllRoofsRidgeOffset);
   const clearPlaneSelection = useRoofStore((s) => s.clearPlaneSelection);
 
   const stats = useRoofStats();
-
   const [isOpen, setIsOpen] = useState(true);
 
   const roofCount = Object.keys(roofs).length;
   const selectedCount = planeSelection.planeIds.length;
   const is3DView = viewMode === "3d";
+  const showLower = NEEDS_LOWER_PITCH.includes(config.defaultRoofType);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -146,7 +165,7 @@ export function RoofPanel() {
 
       {isOpen && (
         <div className="border-t border-border p-3 space-y-3">
-          {/* 3D Roofs Toggle - only in 3D view */}
+          {/* 3D toggle */}
           {is3DView && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -158,6 +177,17 @@ export function RoofPanel() {
               <span className="text-xs">Show 3D Roofs</span>
             </label>
           )}
+
+          {/* Anchor to walls */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.anchorToWalls}
+              onChange={(e) => setConfig({ anchorToWalls: e.target.checked })}
+              className="rounded border-border"
+            />
+            <span className="text-xs">Anchor to wall tops</span>
+          </label>
 
           {/* Selection info */}
           {selectedCount > 0 && (
@@ -174,7 +204,7 @@ export function RoofPanel() {
             </div>
           )}
 
-          {/* Roof Type (Quick-Shape style) */}
+          {/* Roof Type */}
           <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground">Roof Type</label>
             <div className="flex gap-1.5 justify-center flex-wrap">
@@ -191,7 +221,9 @@ export function RoofPanel() {
 
           {/* Pitch */}
           <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Pitch</label>
+            <label className="text-xs text-muted-foreground">
+              {showLower ? "Upper Pitch" : "Pitch"}
+            </label>
             <NumberField
               value={config.defaultPitchDeg}
               onChange={(v) => {
@@ -224,74 +256,133 @@ export function RoofPanel() {
             </div>
           </div>
 
-          {/* Overhang - only show when 3D view with roofs visible */}
-          {is3DView && show3DRoofs && (
+          {/* Lower Pitch (gambrel / mansard) */}
+          {showLower && (
             <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Overhang</label>
+              <label className="text-xs text-muted-foreground">
+                Lower Pitch
+              </label>
               <NumberField
-                value={config.defaultOverhang}
+                value={config.defaultLowerPitchDeg}
                 onChange={(v) => {
-                  setConfig({ defaultOverhang: v });
-                  setAllRoofsOverhang(v);
+                  setConfig({ defaultLowerPitchDeg: v });
+                  setAllRoofsLowerPitch(v);
                 }}
-                min={config.minOverhang}
-                max={config.maxOverhang}
-                step={50}
-                suffix="mm"
+                min={config.minLowerPitchDeg}
+                max={config.maxLowerPitchDeg}
+                step={1}
+                suffix="°"
               />
               <div className="flex flex-wrap gap-1">
-                {COMMON_OVERHANGS.map((o) => (
+                {COMMON_LOWER_PITCHES.map((p) => (
                   <button
-                    key={o.value}
+                    key={p.value}
                     onClick={() => {
-                      setConfig({ defaultOverhang: o.value });
-                      setAllRoofsOverhang(o.value);
+                      setConfig({ defaultLowerPitchDeg: p.value });
+                      setAllRoofsLowerPitch(p.value);
                     }}
                     className={cn(
                       "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
-                      config.defaultOverhang === o.value
+                      config.defaultLowerPitchDeg === p.value
                         ? "border-blue-500 bg-blue-500/10 text-blue-500"
                         : "border-border hover:bg-muted",
                     )}
                   >
-                    {o.label}
+                    {p.label}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Material - only when 3D view and roofs visible */}
+          {/* Overhang & Material & Ridge – only 3D */}
           {is3DView && show3DRoofs && (
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Material</label>
-              <div className="flex flex-wrap gap-1">
-                {materials.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => {
-                      setConfig({ defaultMaterialId: m.id });
-                      setAllRoofsMaterial(m.id);
-                    }}
-                    className={cn(
-                      "text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors",
-                      config.defaultMaterialId === m.id
-                        ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                        : "border-border hover:bg-muted",
-                    )}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: m.color }}
-                    />
-                    {m.name}
-                  </button>
-                ))}
+            <>
+              {/* Overhang */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">
+                  Overhang
+                </label>
+                <NumberField
+                  value={config.defaultOverhang}
+                  onChange={(v) => {
+                    setConfig({ defaultOverhang: v });
+                    setAllRoofsOverhang(v);
+                  }}
+                  min={config.minOverhang}
+                  max={config.maxOverhang}
+                  step={50}
+                  suffix="mm"
+                />
+                <div className="flex flex-wrap gap-1">
+                  {COMMON_OVERHANGS.map((o) => (
+                    <button
+                      key={o.value}
+                      onClick={() => {
+                        setConfig({ defaultOverhang: o.value });
+                        setAllRoofsOverhang(o.value);
+                      }}
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
+                        config.defaultOverhang === o.value
+                          ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                          : "border-border hover:bg-muted",
+                      )}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+
+              {/* Ridge Offset */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">
+                  Ridge Offset
+                </label>
+                <NumberField
+                  value={0}
+                  onChange={(v) => setAllRoofsRidgeOffset(v)}
+                  min={-config.maxRidgeOffset}
+                  max={config.maxRidgeOffset}
+                  step={100}
+                  suffix="mm"
+                />
+              </div>
+
+              {/* Material */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">
+                  Material
+                </label>
+                <div className="flex flex-wrap gap-1">
+                  {materials.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setConfig({ defaultMaterialId: m.id });
+                        setAllRoofsMaterial(m.id);
+                      }}
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors",
+                        config.defaultMaterialId === m.id
+                          ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                          : "border-border hover:bg-muted",
+                      )}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: m.color }}
+                      />
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
 
-          {/* Apply to All */}
+          {/* Apply-all */}
           {roofCount > 0 && (
             <div className="pt-2 border-t border-border space-y-2">
               <p className="text-[10px] text-muted-foreground">
@@ -299,16 +390,16 @@ export function RoofPanel() {
               </p>
               <div className="grid grid-cols-2 gap-1">
                 <button
-                  onClick={() => setAllRoofsPitch(config.defaultPitchDeg)}
-                  className="text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
-                >
-                  Set Pitch
-                </button>
-                <button
                   onClick={() => setAllRoofsType(config.defaultRoofType)}
                   className="text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
                 >
                   Set Type
+                </button>
+                <button
+                  onClick={() => setAllRoofsPitch(config.defaultPitchDeg)}
+                  className="text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
+                >
+                  Set Pitch
                 </button>
                 {is3DView && show3DRoofs && (
                   <>

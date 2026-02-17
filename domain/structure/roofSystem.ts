@@ -1,4 +1,10 @@
-export type RoofType = "flat" | "gable";
+export type RoofType =
+  | "flat"
+  | "gable"
+  | "hip"
+  | "shed"
+  | "gambrel"
+  | "mansard";
 
 export interface RoofMaterial {
   id: string;
@@ -10,12 +16,17 @@ export interface RoofMaterial {
 export interface RoofSystemConfig {
   defaultRoofType: RoofType;
   defaultPitchDeg: number;
+  defaultLowerPitchDeg: number;
   defaultOverhang: number;
   defaultMaterialId: string;
+  anchorToWalls: boolean;
   minPitchDeg: number;
   maxPitchDeg: number;
+  minLowerPitchDeg: number;
+  maxLowerPitchDeg: number;
   minOverhang: number;
   maxOverhang: number;
+  maxRidgeOffset: number;
 }
 
 export const DEFAULT_ROOF_MATERIALS: RoofMaterial[] = [
@@ -28,17 +39,23 @@ export const DEFAULT_ROOF_MATERIALS: RoofMaterial[] = [
   },
   { id: "roof-slate", name: "Slate", color: "#475569", roughness: 0.6 },
   { id: "roof-metal", name: "Metal Sheet", color: "#94a3b8", roughness: 0.3 },
+  { id: "roof-shingle", name: "Shingle", color: "#78716c", roughness: 0.85 },
 ];
 
 export const DEFAULT_ROOF_SYSTEM_CONFIG: RoofSystemConfig = {
   defaultRoofType: "gable",
   defaultPitchDeg: 30,
+  defaultLowerPitchDeg: 60,
   defaultOverhang: 0,
   defaultMaterialId: "roof-tile-red",
+  anchorToWalls: true,
   minPitchDeg: 0,
   maxPitchDeg: 60,
+  minLowerPitchDeg: 30,
+  maxLowerPitchDeg: 85,
   minOverhang: 0,
-  maxOverhang: 1500,
+  maxOverhang: 2000,
+  maxRidgeOffset: 3000,
 };
 
 export function getRoofMaterial(

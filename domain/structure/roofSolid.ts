@@ -1,11 +1,21 @@
 import { Vec2 } from "../geometry/vec2";
 import { RoofType } from "./roofSystem";
 import {
-  generateGableRoof,
-  generateFlatRoofPlanes,
+  RoofBuildParams,
+  RoofBuildResult,
   RoofPlaneGeometry,
-  GableRoofResult,
-} from "./roofTypes/gable";
+  EdgeOverhangs,
+  defaultEdgeOverhangs,
+  emptyResult,
+  buildPolyPlane,
+} from "./roofTypes/common";
+import { generateGableRoof } from "./roofTypes/gable";
+import { generateHipRoof } from "./roofTypes/hip";
+import { generateShedRoof } from "./roofTypes/shed";
+import { generateGambrelRoof } from "./roofTypes/gambrel";
+import { generateMansardRoof } from "./roofTypes/mansard";
+
+export type { RoofPlaneGeometry } from "./roofTypes/common";
 
 export interface RoofSolid {
   roofId: string;
@@ -15,9 +25,6 @@ export interface RoofSolid {
   ridgeHeight: number;
 }
 
-/**
- * Generate the 3-D solid for one roof piece, decomposed into planes.
- */
 export function generateRoofSolid(
   roofId: string,
   faceId: string,
@@ -25,32 +32,41 @@ export function generateRoofSolid(
   roofType: RoofType,
   baseZ: number,
   pitchDeg: number,
-  overhang: number,
+  lowerPitchDeg: number,
+  edgeOverhangs: EdgeOverhangs,
+  ridgeOffset: number,
 ): RoofSolid {
-  let result: GableRoofResult;
-  let ridgeHeight = 0;
+  const params: RoofBuildParams = {
+    roofId,
+    polygon,
+    baseZ,
+    pitchDeg,
+    lowerPitchDeg,
+    edgeOverhangs,
+    ridgeOffset,
+  };
+
+  let result: RoofBuildResult;
 
   switch (roofType) {
-    case "gable": {
-      result = generateGableRoof(roofId, polygon, baseZ, pitchDeg, overhang);
-
-      let minX = Infinity,
-        maxX = -Infinity,
-        minY = Infinity,
-        maxY = -Infinity;
-      for (const p of polygon) {
-        minX = Math.min(minX, p.x);
-        maxX = Math.max(maxX, p.x);
-        minY = Math.min(minY, p.y);
-        maxY = Math.max(maxY, p.y);
-      }
-      const span = Math.min(maxX - minX, maxY - minY);
-      ridgeHeight = (span / 2) * Math.tan((pitchDeg * Math.PI) / 180);
+    case "gable":
+      result = generateGableRoof(params);
       break;
-    }
+    case "hip":
+      result = generateHipRoof(params);
+      break;
+    case "shed":
+      result = generateShedRoof(params);
+      break;
+    case "gambrel":
+      result = generateGambrelRoof(params);
+      break;
+    case "mansard":
+      result = generateMansardRoof(params);
+      break;
     case "flat":
     default:
-      result = generateFlatRoofPlanes(roofId, polygon, baseZ);
+      result = generateFlatRoof(params);
       break;
   }
 
@@ -59,6 +75,29 @@ export function generateRoofSolid(
     faceId,
     roofType,
     planes: result.planes,
-    ridgeHeight,
+    ridgeHeight: result.ridgeHeight,
+  };
+}
+
+function generateFlatRoof(params: RoofBuildParams): RoofBuildResult {
+  const { polygon, baseZ, roofId } = params;
+  if (polygon.length < 3) return emptyResult();
+
+  const corners = polygon.map<[number, number, number]>((p) => [
+    p.x,
+    p.y,
+    baseZ,
+  ]);
+
+  return {
+    planes: [
+      buildPolyPlane(`${roofId}_flat`, "Flat Roof", corners, 0, [
+        "front",
+        "back",
+        "left",
+        "right",
+      ]),
+    ],
+    ridgeHeight: 0,
   };
 }
