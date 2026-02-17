@@ -4,6 +4,7 @@ import React from "react";
 import { useRoofStore, Roof } from "../model/roof.store";
 import { useRoofStats, useSelectedPlaneData } from "../model/roof.selectors";
 import { useEditorStore } from "@/features/editor/model/editor.store";
+import { Vec2 } from "@/domain/geometry/vec2";
 import {
   COMMON_PITCHES,
   COMMON_LOWER_PITCHES,
@@ -490,6 +491,36 @@ export function RoofProperties() {
           >
             Clear Selection
           </button>
+
+          <div className="border-t border-border pt-2 space-y-1.5">
+            {primaryRoof && !primaryRoof.useCustomTopology ? (
+              <button
+                onClick={() => {
+                  const plan = useEditorStore.getState().plan;
+                  const face = plan.faces[primaryRoof.faceId];
+                  if (!face) return;
+                  const polygon = face.vertexIds
+                    .map((vid) => plan.vertices[vid]?.position)
+                    .filter(Boolean) as Vec2[];
+                  useRoofStore
+                    .getState()
+                    .topoInitialize(primaryRoof.id, polygon);
+                }}
+                className="w-full text-[10px] px-2 py-1.5 bg-blue-500/10 text-blue-500 border border-blue-500/30 rounded hover:bg-blue-500/20 transition-colors"
+              >
+                Edit Topology
+              </button>
+            ) : (
+              <button
+                onClick={() =>
+                  useRoofStore.getState().topoResetToPreset(primaryRoof.id)
+                }
+                className="w-full text-[10px] px-2 py-1.5 bg-muted rounded hover:bg-muted/80 transition-colors"
+              >
+                Reset to Preset
+              </button>
+            )}
+          </div>
         </div>
       </Panel>
       <RoofStatistics />

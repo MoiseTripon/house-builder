@@ -4,6 +4,7 @@ import { useWallsStore } from "@/features/walls/model/walls.store";
 import { useRoofStore, Roof } from "./roof.store";
 import {
   generateRoofSolid,
+  generateRoofSolidFromTopology,
   RoofSolid,
   RoofPlaneGeometry,
 } from "@/domain/structure/roofSolid";
@@ -14,12 +15,11 @@ import {
 } from "@/domain/structure/roofTypes/common";
 import { Vec2 } from "@/domain/geometry/vec2";
 
-/* ------------------------------------------------------------------ */
-/*  Auto-sync                                                          */
-/* ------------------------------------------------------------------ */
+/* ── sync ── */
 
 export function useRoofSync() {
   const faces = useEditorStore((s) => s.plan.faces);
+  const vertices = useEditorStore((s) => s.plan.vertices);
   const walls = useWallsStore((s) => s.walls);
   const wallConfig = useWallsStore((s) => s.config);
   const anchorToWalls = useRoofStore((s) => s.config.anchorToWalls);
@@ -29,20 +29,26 @@ export function useRoofSync() {
   wallsRef.current = walls;
   const wallConfigRef = useRef(wallConfig);
   wallConfigRef.current = wallConfig;
+  const verticesRef = useRef(vertices);
+  verticesRef.current = vertices;
+  const facesRef = useRef(faces);
+  facesRef.current = faces;
 
   useEffect(() => {
     const faceIds = Object.keys(faces);
     if (faceIds.length === 0) {
-      syncWithFaces([], () => 0);
+      syncWithFaces(
+        [],
+        () => 0,
+        () => [],
+      );
       return;
     }
 
     const wallTopForFace = (faceId: string): number => {
       if (!anchorToWalls) return wallConfigRef.current.defaultHeight;
-
-      const face = faces[faceId];
+      const face = facesRef.current[faceId];
       if (!face) return wallConfigRef.current.defaultHeight;
-
       let maxH = 0;
       for (const eid of face.edgeIds) {
         const wall = Object.values(wallsRef.current).find(
@@ -53,19 +59,20 @@ export function useRoofSync() {
       return maxH > 0 ? maxH : wallConfigRef.current.defaultHeight;
     };
 
-    syncWithFaces(faceIds, wallTopForFace);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [faces, walls, anchorToWalls, syncWithFaces]);
+    const polygonForFace = (faceId: string): Vec2[] => {
+      const face = facesRef.current[faceId];
+      if (!face) return [];
+      return face.vertexIds
+        .map((vid) => verticesRef.current[vid]?.position)
+        .filter(Boolean) as Vec2[];
+    };
+
+    syncWithFaces(faceIds, wallTopForFace, polygonForFace);
+  }, [faces, vertices, walls, anchorToWalls, syncWithFaces]);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Wall-thickness-adjusted overhangs                                  */
-/* ------------------------------------------------------------------ */
+/* ── helpers ── */
 
-/**
- * Computes the max wall thickness on a face's edges.
- * Used to push "zero overhang" to the outer wall face.
- */
 function faceWallThickness(
   faceId: string,
   faces: Record<string, { edgeIds: string[] }>,
@@ -82,21 +89,47 @@ function faceWallThickness(
 }
 
 function adjustedOverhangs(
-  userOverhangs: EdgeOverhangs,
-  wallThickness: number,
+  userOH: EdgeOverhangs,
+  wallT: number,
 ): EdgeOverhangs {
-  const half = wallThickness / 2;
+  const half = wallT / 2;
   return {
-    front: userOverhangs.front + half,
-    back: userOverhangs.back + half,
-    left: userOverhangs.left + half,
-    right: userOverhangs.right + half,
+    front: userOH.front + half,
+    back: userOH.back + half,
+    left: userOH.left + half,
+    right: userOH.right + half,
   };
 }
 
-/* ------------------------------------------------------------------ */
-/*  Solids                                                             */
-/* ------------------------------------------------------------------ */
+function buildRoofSolid(
+  roof: Roof,
+  polygon: Vec2[],
+  wallThickness: number,
+): RoofSolid {
+  if (roof.useCustomTopology) {
+    return generateRoofSolidFromTopology(
+      roof.id,
+      roof.faceId,
+      roof.topology,
+      roof.baseZ,
+      roof.pitchDeg,
+    );
+  }
+  const oh = adjustedOverhangs(roof.edgeOverhangs, wallThickness);
+  return generateRoofSolid(
+    roof.id,
+    roof.faceId,
+    polygon,
+    roof.roofType,
+    roof.baseZ,
+    roof.pitchDeg,
+    roof.lowerPitchDeg,
+    oh,
+    roof.ridgeOffset,
+  );
+}
+
+/* ── solids ── */
 
 export function useRoofSolids(): RoofSolid[] {
   const plan = useEditorStore((s) => s.plan);
@@ -108,35 +141,18 @@ export function useRoofSolids(): RoofSolid[] {
     for (const roof of Object.values(roofs)) {
       const face = plan.faces[roof.faceId];
       if (!face) continue;
-      const polygon: Vec2[] = face.vertexIds
+      const polygon = face.vertexIds
         .map((vid) => plan.vertices[vid]?.position)
         .filter(Boolean) as Vec2[];
       if (polygon.length < 3) continue;
-
       const wt = faceWallThickness(roof.faceId, plan.faces, walls);
-      const oh = adjustedOverhangs(roof.edgeOverhangs, wt);
-
-      solids.push(
-        generateRoofSolid(
-          roof.id,
-          roof.faceId,
-          polygon,
-          roof.roofType,
-          roof.baseZ,
-          roof.pitchDeg,
-          roof.lowerPitchDeg,
-          oh,
-          roof.ridgeOffset,
-        ),
-      );
+      solids.push(buildRoofSolid(roof, polygon, wt));
     }
     return solids;
   }, [plan.faces, plan.vertices, roofs, walls]);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Per-plane render data                                              */
-/* ------------------------------------------------------------------ */
+/* ── per-plane render data ── */
 
 export interface RoofPlaneRenderData {
   plane: RoofPlaneGeometry;
@@ -157,26 +173,12 @@ export function useRoofPlanesWithMaterials(): RoofPlaneRenderData[] {
     for (const roof of Object.values(roofs)) {
       const face = plan.faces[roof.faceId];
       if (!face) continue;
-      const polygon: Vec2[] = face.vertexIds
+      const polygon = face.vertexIds
         .map((vid) => plan.vertices[vid]?.position)
         .filter(Boolean) as Vec2[];
       if (polygon.length < 3) continue;
-
       const wt = faceWallThickness(roof.faceId, plan.faces, walls);
-      const oh = adjustedOverhangs(roof.edgeOverhangs, wt);
-
-      const solid = generateRoofSolid(
-        roof.id,
-        roof.faceId,
-        polygon,
-        roof.roofType,
-        roof.baseZ,
-        roof.pitchDeg,
-        roof.lowerPitchDeg,
-        oh,
-        roof.ridgeOffset,
-      );
-
+      const solid = buildRoofSolid(roof, polygon, wt);
       const material = getRoofMaterial(roof.materialId, materials);
       for (const plane of solid.planes) {
         result.push({
@@ -191,9 +193,7 @@ export function useRoofPlanesWithMaterials(): RoofPlaneRenderData[] {
   }, [plan.faces, plan.vertices, roofs, walls, materials, planeSelection]);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Stats                                                              */
-/* ------------------------------------------------------------------ */
+/* ── stats ── */
 
 export function useRoofStats() {
   const solids = useRoofSolids();
@@ -215,13 +215,12 @@ export function useRoofStats() {
         list.length > 0
           ? list.reduce((a, r) => a + r.pitchDeg, 0) / list.length
           : 0,
+      customCount: list.filter((r) => r.useCustomTopology).length,
     };
   }, [roofs, solids]);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Selected-plane data for PropertiesPanel                            */
-/* ------------------------------------------------------------------ */
+/* ── selected plane data ── */
 
 export function useSelectedPlaneData(): {
   planes: (RoofPlaneGeometry & { roofId: string })[];
@@ -234,7 +233,6 @@ export function useSelectedPlaneData(): {
 
   return useMemo(() => {
     if (planeSelection.planeIds.length === 0) return { planes: [], roof: null };
-
     const selectedSet = new Set(planeSelection.planeIds);
     const planes: (RoofPlaneGeometry & { roofId: string })[] = [];
     let primaryRoof: Roof | null = null;
@@ -242,25 +240,12 @@ export function useSelectedPlaneData(): {
     for (const roof of Object.values(roofs)) {
       const face = plan.faces[roof.faceId];
       if (!face) continue;
-      const polygon: Vec2[] = face.vertexIds
+      const polygon = face.vertexIds
         .map((vid) => plan.vertices[vid]?.position)
         .filter(Boolean) as Vec2[];
       if (polygon.length < 3) continue;
-
       const wt = faceWallThickness(roof.faceId, plan.faces, walls);
-      const oh = adjustedOverhangs(roof.edgeOverhangs, wt);
-
-      const solid = generateRoofSolid(
-        roof.id,
-        roof.faceId,
-        polygon,
-        roof.roofType,
-        roof.baseZ,
-        roof.pitchDeg,
-        roof.lowerPitchDeg,
-        oh,
-        roof.ridgeOffset,
-      );
+      const solid = buildRoofSolid(roof, polygon, wt);
 
       for (const p of solid.planes) {
         if (selectedSet.has(p.planeId)) {

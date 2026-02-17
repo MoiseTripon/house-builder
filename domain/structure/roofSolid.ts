@@ -14,6 +14,9 @@ import { generateHipRoof } from "./roofTypes/hip";
 import { generateShedRoof } from "./roofTypes/shed";
 import { generateGambrelRoof } from "./roofTypes/gambrel";
 import { generateMansardRoof } from "./roofTypes/mansard";
+import { RoofTopology } from "./roofTopology/types";
+import { solveHeights, SolverParams } from "./roofTopology/solver";
+import { meshFromTopology } from "./roofTopology/meshgen";
 
 export type { RoofPlaneGeometry } from "./roofTypes/common";
 
@@ -25,6 +28,9 @@ export interface RoofSolid {
   ridgeHeight: number;
 }
 
+/**
+ * Generate geometry from preset-based roof type.
+ */
 export function generateRoofSolid(
   roofId: string,
   faceId: string,
@@ -76,6 +82,39 @@ export function generateRoofSolid(
     roofType,
     planes: result.planes,
     ridgeHeight: result.ridgeHeight,
+  };
+}
+
+/**
+ * Generate geometry from a custom topology (user-edited).
+ */
+export function generateRoofSolidFromTopology(
+  roofId: string,
+  faceId: string,
+  topology: RoofTopology,
+  baseZ: number,
+  pitchDeg: number,
+): RoofSolid {
+  const solverParams: SolverParams = {
+    baseZ,
+    defaultPitchDeg: pitchDeg,
+  };
+
+  const solved = solveHeights(topology, solverParams);
+  const planes = meshFromTopology(solved, roofId);
+
+  // Compute ridge height from max vertex Z
+  let maxZ = baseZ;
+  for (const v of Object.values(solved.vertices)) {
+    if (v.z !== null && v.z > maxZ) maxZ = v.z;
+  }
+
+  return {
+    roofId,
+    faceId,
+    roofType: "flat", // custom topology doesn't have a preset type
+    planes,
+    ridgeHeight: maxZ - baseZ,
   };
 }
 

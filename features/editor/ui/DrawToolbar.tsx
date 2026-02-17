@@ -8,6 +8,7 @@ import { vec2 } from "@/domain/geometry/vec2";
 import { cn } from "@/lib/utils";
 import { WallsPanel } from "@/features/walls/ui/WallsPanel";
 import { RoofPanel } from "@/features/roof";
+import { RoofToolbar } from "@/features/roof/ui/RoofToolbar";
 
 type ShapeType = "rectangle" | "l-shape" | "u-shape";
 
@@ -351,6 +352,7 @@ export function DrawToolbar() {
       {/* Walls Panel */}
       <WallsPanel />
       <RoofPanel />
+      <RoofToolbar />
     </div>
   );
 }
