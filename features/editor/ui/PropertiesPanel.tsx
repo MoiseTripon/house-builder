@@ -16,6 +16,7 @@ import {
 } from "@/domain/geometry/polygon";
 import { WallsProperties } from "@/features/walls/ui/WallsProperties";
 import { cn } from "@/lib/utils";
+import { RoofProperties } from "@/features/roof/ui/RoofProperties";
 
 function radToDeg(r: number) {
   return (r * 180) / Math.PI;
@@ -79,6 +80,7 @@ export function PropertiesPanel() {
     return (
       <div className="p-4 space-y-3">
         <WallsProperties />
+        <RoofProperties />
       </div>
     );
   }

@@ -36,6 +36,7 @@ import {
   interiorAngleAt,
   angleLabelPosition,
 } from "@/domain/geometry/polygon";
+import { RoofSolids } from "./objects/RoofSolids";
 
 /* ================================================================
    Plan View Camera Setup - ensures proper top-down view
@@ -410,6 +411,7 @@ function SceneContent({ isPlanView }: { isPlanView: boolean }) {
       <Grid />
       <PlanLines />
       <WallSolids />
+      <RoofSolids />
       <Highlights />
       {isPlanView && <AngleArcs />}
       {isPlanView && <CanvasInteraction />}
